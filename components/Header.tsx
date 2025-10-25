@@ -14,11 +14,11 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ theme, onToggleTheme, showInstallButton, onInstall, onShowInstallHelp }) => {
   return (
-    <header className="relative text-center mb-8 py-2">
-      <h1 className="text-4xl md:text-5xl font-extrabold text-white tracking-tight [text-shadow:0_2px_5px_rgba(0,0,0,0.4)]">
+    <header className="flex justify-between items-center mb-8 py-2">
+      <h1 className="text-3xl md:text-5xl font-extrabold text-white tracking-tight [text-shadow:0_2px_5px_rgba(0,0,0,0.4)]">
         VueLuc 2.0
       </h1>
-      <div className="absolute top-1/2 -translate-y-1/2 right-0 flex items-center space-x-2">
+      <div className="flex items-center space-x-1 sm:space-x-2">
         {showInstallButton && (
           <button
             onClick={onInstall}
