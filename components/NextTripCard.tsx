@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Trip } from '../types';
-import { PlaneTakeoffIcon } from './icons/PlaneTakeoffIcon';
+import { AirlineLogo } from './AirlineLogo';
 
 interface NextTripCardProps {
   trip: Trip;
@@ -47,6 +47,7 @@ const NextTripCard: React.FC<NextTripCardProps> = ({ trip }) => {
   
   const destination = trip.departureFlight?.arrivalCity || 'Destino';
   const flightNumber = trip.departureFlight?.flightNumber || 'N/A';
+  const airline = trip.departureFlight?.airline || null;
 
   return (
     <div className="mb-6 p-4 md:p-5 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white shadow-lg border border-indigo-400">
@@ -55,8 +56,8 @@ const NextTripCard: React.FC<NextTripCardProps> = ({ trip }) => {
           <h2 className="text-lg font-bold">Próximo Viaje</h2>
           <p className="text-indigo-200 font-semibold">{`✈️ Vuelo a ${destination}`}</p>
         </div>
-        <div className="bg-white/20 p-2 rounded-full">
-            <PlaneTakeoffIcon className="h-6 w-6" />
+        <div className="bg-white/20 p-2 rounded-full flex items-center justify-center">
+            <AirlineLogo airline={airline} size="xs" />
         </div>
       </div>
       

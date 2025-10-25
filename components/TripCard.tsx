@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import type { Flight, Trip } from '../types';
-import { AerolineasLogo } from './icons/AerolineasLogo';
-import { JetSmartLogo } from './icons/JetSmartLogo';
+import { AirlineLogo } from './AirlineLogo';
 import { StarIcon } from './icons/StarIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { ExclamationTriangleIcon } from './icons/ExclamationTriangleIcon';
@@ -51,25 +50,6 @@ const formatPaymentMethod = (paymentMethod: string | null): string => {
   if (paymentMethod.includes('8059')) return 'Crédito Yoy';
   
   return paymentMethod;
-};
-
-const AirlineLogo: React.FC<{ airline: string | null; size?: 'sm' | 'md' }> = ({ airline, size = 'md' }) => {
-    if (!airline) return null;
-    
-    const sizeClasses = {
-        sm: 'h-8 w-8', // Consistent size for icons
-        md: 'h-8 w-8'
-    };
-
-    const lowerCaseAirline = airline.toLowerCase();
-    
-    if (lowerCaseAirline.includes('aerolineas')) {
-        return <AerolineasLogo className={`${sizeClasses[size]} text-[#00A1DE]`} />;
-    }
-    if (lowerCaseAirline.includes('jetsmart') || lowerCaseAirline.includes('jet smart')) {
-        return <JetSmartLogo className={sizeClasses[size]} />;
-    }
-    return <span className="text-sm font-semibold">{airline}</span>;
 };
 
 const FlightInfo: React.FC<{ flight: Flight; type: 'Ida' | 'Vuelta' }> = ({ flight, type }) => {
