@@ -1,0 +1,29 @@
+{
+  "short_name": "VueLuc",
+  "name": "VueLuc 2.0",
+  "icons": [
+    {
+      "src": "/public/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    },
+    {
+      "src": "/public/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/public/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#f0f9ff",
+  "display": "standalone",
+  "scope": "/",
+  "theme_color": "#4f46e5",
+  "description": "Una aplicación inteligente para gestionar tus viajes de trabajo."
+}

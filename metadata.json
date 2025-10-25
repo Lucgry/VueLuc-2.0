@@ -1,0 +1,5 @@
+{
+  "name": "VueLuc",
+  "description": "An intelligent flight management app that helps you organize your weekly work trips. Paste your flight confirmation emails, and the app will use AI to automatically extract and display all relevant travel details, such as dates, flight numbers, times, and costs.",
+  "requestFramePermissions": []
+}
