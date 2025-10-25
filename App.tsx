@@ -19,6 +19,17 @@ import { sampleTrips } from './data/sampleData';
 type ListFilter = 'all' | 'future' | 'currentMonth' | 'completed';
 type View = 'list' | 'calendar' | 'costs';
 
+// A type guard for BeforeInstallPromptEvent
+interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: Array<string>;
+  readonly userChoice: Promise<{
+    outcome: 'accepted' | 'dismissed';
+    platform: string;
+  }>;
+  prompt(): Promise<void>;
+}
+
+
 const getTripStartDate = (trip: Trip): Date | null => {
     const dateStr = trip.departureFlight?.departureDateTime || trip.returnFlight?.departureDateTime;
     return dateStr ? new Date(dateStr) : null;
@@ -49,6 +60,7 @@ const App: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [view, setView] = useState<View>('list');
   const [listFilter, setListFilter] = useState<ListFilter>('future');
+  const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'light' || savedTheme === 'dark') {
@@ -59,6 +71,27 @@ const App: React.FC = () => {
     }
     return 'light';
   });
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault(); 
+      setInstallPromptEvent(event as BeforeInstallPromptEvent);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    const handleAppInstalled = () => {
+      setInstallPromptEvent(null);
+    };
+
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
 
   // Effect to apply the dark class to the html element
   useEffect(() => {
@@ -170,6 +203,20 @@ const App: React.FC = () => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   };
 
+  const handleInstallClick = async () => {
+    if (!installPromptEvent) {
+      return;
+    }
+    installPromptEvent.prompt();
+    const { outcome } = await installPromptEvent.userChoice;
+    if (outcome === 'accepted') {
+      console.log('User accepted the install prompt');
+    } else {
+      console.log('User dismissed the install prompt');
+    }
+    setInstallPromptEvent(null);
+  };
+
   const renderView = () => {
     switch (view) {
       case 'calendar':
@@ -197,7 +244,12 @@ const App: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-4 md:p-6">
-      <Header theme={theme} onToggleTheme={handleThemeToggle} />
+      <Header 
+        theme={theme} 
+        onToggleTheme={handleThemeToggle}
+        onInstall={handleInstallClick}
+        showInstallButton={!!installPromptEvent}
+      />
       
       <div className="flex justify-center p-1.5 rounded-full bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm shadow-md mb-6 sticky top-4 z-10">
         {viewOptions.map(option => (

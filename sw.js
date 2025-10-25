@@ -3,7 +3,7 @@ const urlsToCache = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/public/icon.svg'
+  '/icon.svg'
   // El JS y CSS principal se cachearán dinámicamente en la primera visita
 ];
 
