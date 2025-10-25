@@ -1,8 +1,6 @@
 import { GoogleGenAI, Type, Part } from "@google/genai";
 import type { Trip, Flight } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 const flightSchema = {
   type: Type.OBJECT,
   properties: {
@@ -60,6 +58,14 @@ export const parseFlightEmail = async (emailText: string, pdfBase64?: string | n
   `;
 
   try {
+    // FIX: Initialize the AI client here, inside the try/catch block.
+    // This prevents the app from crashing on startup if the API key is not immediately available.
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      throw new Error("La clave de API no está configurada. No se puede comunicar con el servicio de IA.");
+    }
+    const ai = new GoogleGenAI({ apiKey });
+
     const parts: Part[] = [
       { text: instructions },
       { text: `Texto del correo a analizar:\n---\n${emailText}\n---` }
@@ -143,6 +149,9 @@ export const parseFlightEmail = async (emailText: string, pdfBase64?: string | n
     const message = error instanceof Error ? error.message : "An unknown error occurred during parsing.";
     if (message.includes('JSON')) {
         throw new Error("La IA no pudo procesar el email. Asegúrate de que el texto copiado sea claro y contenga los detalles del vuelo.");
+    }
+    if (message.includes("API")) {
+        throw new Error(`Error de configuración: ${message}`);
     }
     throw new Error(`Error al procesar el email: ${message}`);
   }
