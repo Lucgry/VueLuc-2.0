@@ -5,6 +5,7 @@ import TripList from './components/TripList';
 import EmailImporter from './components/EmailImporter';
 import CostSummary from './components/CostSummary';
 import CalendarView from './components/CalendarView';
+import NextTripCard from './components/NextTripCard'; // Import new component
 import { PlusCircleIcon } from './components/icons/PlusCircleIcon';
 import { ListBulletIcon } from './components/icons/ListBulletIcon';
 import { CalendarDaysIcon } from './components/icons/CalendarDaysIcon';
@@ -104,6 +105,15 @@ const App: React.FC = () => {
     });
   }, [trips]);
 
+  const nextTrip = useMemo(() => {
+    const now = new Date();
+    const futureTrips = sortedTrips.filter(trip => {
+        const startDate = getTripStartDate(trip);
+        return startDate ? startDate >= now : false;
+    });
+    return futureTrips.length > 0 ? futureTrips[0] : null;
+  }, [sortedTrips]);
+
   const filteredTrips = useMemo(() => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -133,14 +143,7 @@ const App: React.FC = () => {
     }
   }, [sortedTrips, listFilter]);
 
-  const nextTripId = useMemo(() => {
-    const now = new Date();
-    const futureTrips = sortedTrips.filter(trip => {
-        const startDate = getTripStartDate(trip);
-        return startDate ? startDate >= now : false;
-    });
-    return futureTrips.length > 0 ? futureTrips[0].id : null;
-  }, [sortedTrips]);
+  const nextTripId = nextTrip ? nextTrip.id : null;
 
   const handleAddTrip = (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
     if (newTripData.bookingReference) {
@@ -215,22 +218,25 @@ const App: React.FC = () => {
 
       <main>
         {view === 'list' && (
-          <div className="flex space-x-2 mb-6 p-1.5 rounded-full bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm shadow-md">
-            {listFilterOptions.map(option => (
-              <button
-                key={option.id}
-                onClick={() => setListFilter(option.id)}
-                className={`flex-1 flex items-center justify-center space-x-2 px-4 py-1.5 rounded-full text-sm font-semibold transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900 ${
-                  listFilter === option.id
-                    ? 'bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow'
-                    : 'bg-transparent text-slate-600 dark:text-slate-300 hover:bg-slate-500/10'
-                }`}
-              >
-                <option.icon className="h-5 w-5" />
-                <span className="hidden sm:inline">{option.label}</span>
-              </button>
-            ))}
-          </div>
+          <>
+            {nextTrip && <NextTripCard trip={nextTrip} />}
+            <div className="flex space-x-2 mb-6 p-1.5 rounded-full bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm shadow-md">
+              {listFilterOptions.map(option => (
+                <button
+                  key={option.id}
+                  onClick={() => setListFilter(option.id)}
+                  className={`flex-1 flex items-center justify-center space-x-2 px-4 py-1.5 rounded-full text-sm font-semibold transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900 ${
+                    listFilter === option.id
+                      ? 'bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow'
+                      : 'bg-transparent text-slate-600 dark:text-slate-300 hover:bg-slate-500/10'
+                  }`}
+                >
+                  <option.icon className="h-5 w-5" />
+                  <span className="hidden sm:inline">{option.label}</span>
+                </button>
+              ))}
+            </div>
+          </>
         )}
         {renderView()}
       </main>

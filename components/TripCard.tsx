@@ -129,7 +129,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
 
     const getStatus = () => {
         if (isPast) return { text: 'Completado', Icon: CheckCircleIcon, color: 'text-green-500' };
-        if (isNext) return { text: 'Próximo Viaje', Icon: StarIcon, color: 'text-amber-500 animate-pulse' };
+        if (isNext) return { text: 'Próximo Viaje', Icon: StarIcon, color: 'text-amber-500' };
         if (!idaFlight || !vueltaFlight) return { text: 'Tramo único', Icon: ExclamationTriangleIcon, color: 'text-orange-500' };
         return null;
     }
@@ -202,7 +202,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
 
 
     return (
-        <div className={`relative bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 transition-all duration-300 ${isPast ? 'opacity-60 hover:opacity-100' : ''} ${isNext ? 'ring-2 ring-indigo-500 animate-pulse-glow' : ''}`}>
+        <div className={`relative bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 transition-all duration-300 ${isPast ? 'opacity-60 hover:opacity-100' : ''} ${isNext ? 'ring-2 ring-indigo-500' : ''}`}>
             {/* Clickable Header for Collapsed View & Toggle */}
             <div 
                 className="flex justify-between items-center p-4 cursor-pointer"
