@@ -5,7 +5,8 @@ import TripList from './components/TripList';
 import EmailImporter from './components/EmailImporter';
 import CostSummary from './components/CostSummary';
 import CalendarView from './components/CalendarView';
-import NextTripCard from './components/NextTripCard'; // Import new component
+import NextTripCard from './components/NextTripCard';
+import InstallHelpModal from './components/InstallHelpModal'; // Importar nuevo componente
 import { PlusCircleIcon } from './components/icons/PlusCircleIcon';
 import { ListBulletIcon } from './components/icons/ListBulletIcon';
 import { CalendarDaysIcon } from './components/icons/CalendarDaysIcon';
@@ -58,6 +59,7 @@ const App: React.FC = () => {
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isInstallHelpOpen, setIsInstallHelpOpen] = useState(false);
   const [view, setView] = useState<View>('list');
   const [listFilter, setListFilter] = useState<ListFilter>('future');
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
@@ -205,6 +207,8 @@ const App: React.FC = () => {
 
   const handleInstallClick = async () => {
     if (!installPromptEvent) {
+      // If prompt isn't available, show the help modal as a fallback
+      setIsInstallHelpOpen(true);
       return;
     }
     installPromptEvent.prompt();
@@ -249,6 +253,7 @@ const App: React.FC = () => {
         onToggleTheme={handleThemeToggle}
         onInstall={handleInstallClick}
         showInstallButton={!!installPromptEvent}
+        onShowInstallHelp={() => setIsInstallHelpOpen(true)}
       />
       
       <div className="flex justify-center p-1.5 rounded-full bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm shadow-md mb-6 sticky top-4 z-10">
@@ -302,6 +307,7 @@ const App: React.FC = () => {
       </button>
 
       {isModalOpen && <EmailImporter onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} />}
+      {isInstallHelpOpen && <InstallHelpModal onClose={() => setIsInstallHelpOpen(false)} />}
     </div>
   );
 };
