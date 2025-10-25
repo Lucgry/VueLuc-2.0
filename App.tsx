@@ -15,6 +15,7 @@ import { CalendarClockIcon } from './components/icons/CalendarClockIcon';
 import { CheckBadgeIcon } from './components/icons/CheckBadgeIcon';
 import { ArchiveBoxIcon } from './components/icons/ArchiveBoxIcon';
 import { sampleTrips } from './data/sampleData';
+import InstallBanner from './components/InstallBanner';
 
 type ListFilter = 'all' | 'future' | 'currentMonth' | 'completed';
 type View = 'list' | 'calendar' | 'costs';
@@ -61,6 +62,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<View>('list');
   const [listFilter, setListFilter] = useState<ListFilter>('future');
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isInstallBannerVisible, setIsInstallBannerVisible] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'light' || savedTheme === 'dark') {
@@ -76,12 +78,20 @@ const App: React.FC = () => {
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault(); 
       setInstallPromptEvent(event as BeforeInstallPromptEvent);
+      
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      const bannerDismissed = sessionStorage.getItem('installBannerDismissed');
+      
+      if (!isStandalone && !bannerDismissed) {
+          setIsInstallBannerVisible(true);
+      }
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
     const handleAppInstalled = () => {
       setInstallPromptEvent(null);
+      setIsInstallBannerVisible(false);
     };
 
     window.addEventListener('appinstalled', handleAppInstalled);
@@ -211,10 +221,16 @@ const App: React.FC = () => {
     const { outcome } = await installPromptEvent.userChoice;
     if (outcome === 'accepted') {
       console.log('User accepted the install prompt');
+      setIsInstallBannerVisible(false);
     } else {
       console.log('User dismissed the install prompt');
     }
     setInstallPromptEvent(null);
+  };
+
+  const handleDismissInstallBanner = () => {
+    sessionStorage.setItem('installBannerDismissed', 'true');
+    setIsInstallBannerVisible(false);
   };
 
   const renderView = () => {
@@ -247,8 +263,6 @@ const App: React.FC = () => {
       <Header 
         theme={theme} 
         onToggleTheme={handleThemeToggle}
-        onInstall={handleInstallClick}
-        showInstallButton={!!installPromptEvent}
       />
       
       <div className="flex justify-center p-1.5 rounded-full bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm shadow-md mb-6 sticky top-4 z-10">
@@ -302,6 +316,13 @@ const App: React.FC = () => {
       </button>
 
       {isModalOpen && <EmailImporter onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} />}
+
+      {isInstallBannerVisible && installPromptEvent && (
+        <InstallBanner 
+          onInstall={handleInstallClick}
+          onDismiss={handleDismissInstallBanner}
+        />
+      )}
     </div>
   );
 };
