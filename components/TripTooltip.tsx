@@ -26,6 +26,8 @@ const FlightDetailRow: React.FC<{ flight: Flight, type: string }> = ({ flight, t
 );
 
 const TripTooltip: React.FC<TripTooltipProps> = ({ trip, onClose }) => {
+  const totalCost = (trip.departureFlight?.cost || 0) + (trip.returnFlight?.cost || 0);
+
   return (
     <div 
       className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-40 p-4" 
@@ -45,7 +47,9 @@ const TripTooltip: React.FC<TripTooltipProps> = ({ trip, onClose }) => {
             </div>
             <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 text-sm space-y-1">
                 <p><strong>Ref:</strong> {trip.bookingReference}</p>
-                <p><strong>Costo Total:</strong> ${trip.totalCost?.toLocaleString('es-AR')}</p>
+                {totalCost > 0 && (
+                  <p><strong>Costo Total:</strong> ${totalCost.toLocaleString('es-AR')}</p>
+                )}
             </div>
         </div>
     </div>

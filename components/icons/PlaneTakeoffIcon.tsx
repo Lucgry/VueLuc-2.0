@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export const PlaneTakeoffIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (

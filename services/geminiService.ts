@@ -12,6 +12,8 @@ const flightSchema = {
     arrivalCity: { type: Type.STRING, description: "Ciudad de llegada, ej. 'Buenos Aires'." },
     departureDateTime: { type: Type.STRING, description: "Fecha y hora de salida en formato ISO 8601 'YYYY-MM-DDTHH:mm:ss'." },
     arrivalDateTime: { type: Type.STRING, description: "Fecha y hora de llegada en formato ISO 8601 'YYYY-MM-DDTHH:mm:ss'." },
+    cost: { type: Type.NUMBER, description: "Costo asociado a este vuelo específico. Si el costo es para el viaje completo, asígnalo al primer vuelo." },
+    paymentMethod: { type: Type.STRING, description: "Método de pago para este vuelo, ej. 'Tarjeta de Crédito terminada en 1234'." },
   },
   required: ["flightNumber", "departureAirportCode", "arrivalAirportCode", "departureDateTime", "arrivalDateTime"]
 };
@@ -25,8 +27,6 @@ const tripSchema = {
       description: "Una lista de todos los vuelos encontrados en el email. Si es un solo tramo, esta lista tendrá un solo elemento. Si es ida y vuelta, tendrá dos.",
       items: flightSchema,
     },
-    totalCost: { type: Type.NUMBER, description: "Costo total del viaje como un número, sin símbolos de moneda." },
-    paymentMethod: { type: Type.STRING, description: "Método de pago, por ejemplo 'Tarjeta de Crédito terminada en 1234'." },
     bookingReference: { type: Type.STRING, description: "Código de reserva o localizador." },
   },
   required: ["bookingReference", "flights"]
@@ -37,7 +37,7 @@ export const parseFlightEmail = async (emailText: string, pdfBase64?: string | n
     ? `
     DATOS DEL PDF ADJUNTO:
     - Se ha adjuntado un archivo PDF. Este archivo contiene la información de facturación y el costo total del viaje.
-    - DEBES priorizar el valor encontrado en el PDF como el 'totalCost'. Si el texto del email también menciona un precio, ignóralo y usa únicamente el del PDF.
+    - DEBES priorizar el valor encontrado en el PDF como el 'cost' y asignarlo al primer vuelo de la lista.
     `
     : '';
     
@@ -46,20 +46,18 @@ export const parseFlightEmail = async (emailText: string, pdfBase64?: string | n
     ${pdfInstruction}
 
     REGLAS ESTRICTAS E INQUEBRABLES:
-    1.  TU ÚNICA FUENTE DE VERDAD es la sección del email titulada "DETALLE RESERVA" o similar. Ignora por completo cualquier otra parte del texto.
-    2.  TAREA PRINCIPAL: Extrae CADA VUELO que encuentres en la sección "DETALLE RESERVA" y colócalo como un objeto dentro de la lista 'flights' del JSON.
-    3.  REGLA DE ORO: NO INVENTES VUELOS. Si el email contiene solo UN vuelo, la lista 'flights' DEBE contener solo UN objeto. Si el email contiene dos vuelos (ida y vuelta), la lista 'flights' debe contener DOS objetos. Tu trabajo es reportar literalmente lo que está escrito en la sección "DETALLE RESERVA".
+    1.  TAREA PRINCIPAL: Extrae CADA VUELO que encuentres en el email y colócalo como un objeto dentro de la lista 'flights' del JSON.
+    2.  REGLA DE ORO: NO INVENTES VUELOS. Si el email contiene solo UN vuelo, la lista 'flights' DEBE contener solo UN objeto. Si el email contiene dos vuelos (ida y vuelta), la lista 'flights' debe contener DOS objetos.
+    3.  COSTO: El costo total del viaje debe ser asignado al campo 'cost' del PRIMER vuelo en la lista 'flights'.
 
     FORMATO DE FECHA:
     - Debes convertir SIEMPRE las fechas y horas al formato estricto ISO 8601: 'YYYY-MM-DDTHH:mm:ss'.
     - Si el año no está especificado (ej. '21 oct'), deduce el año futuro más próximo. Si la fecha actual es Junio 2025 y la fecha del vuelo es '21 oct', el año es 2025. Si la fecha actual es Diciembre 2025 y la fecha del vuelo es '21 oct', el año correcto es 2026.
 
-    Extrae también el 'bookingReference' y el 'totalCost', priorizando el costo del PDF si se adjunta.
+    Extrae también el 'bookingReference'.
   `;
 
   try {
-    // FIX: Initialize the AI client here, inside the try/catch block.
-    // This prevents the app from crashing on startup if the API key is not immediately available.
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
       throw new Error("La clave de API no está configurada. No se puede comunicar con el servicio de IA.");
@@ -93,22 +91,14 @@ export const parseFlightEmail = async (emailText: string, pdfBase64?: string | n
     
     type GeminiResponse = {
       flights: Flight[];
-      totalCost: number | null;
-      paymentMethod: string | null;
       bookingReference: string | null;
     };
 
     const aiResponse = JSON.parse(parsedText) as GeminiResponse;
     
-    // --- AUTHORITATIVE CLASSIFICATION LOGIC ---
-    // This logic takes the list of flights from the AI and classifies them correctly,
-    // preventing any hallucinated data from persisting.
-    
     const finalTrip: Omit<Trip, 'id' | 'createdAt'> = {
       departureFlight: null,
       returnFlight: null,
-      totalCost: aiResponse.totalCost,
-      paymentMethod: aiResponse.paymentMethod,
       bookingReference: aiResponse.bookingReference,
     };
 
@@ -130,12 +120,10 @@ export const parseFlightEmail = async (emailText: string, pdfBase64?: string | n
       const departureCode = flight.departureAirportCode.toUpperCase().trim();
       
       if (departureCode === SALTA_CODE) {
-        // Rule: A flight FROM Salta is ALWAYS an "Ida" (departureFlight).
         if (!finalTrip.departureFlight) {
           finalTrip.departureFlight = flight;
         }
       } else if (BUENOS_AIRES_CODES.includes(departureCode)) {
-        // Rule: A flight FROM Buenos Aires is ALWAYS a "Vuelta" (returnFlight).
         if (!finalTrip.returnFlight) {
           finalTrip.returnFlight = flight;
         }

@@ -66,16 +66,23 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     const totalCompletedTrips = completedTripsForYear.length;
     
     const totalCostForYear = useMemo(() => {
-        return tripsForSelectedYear.reduce((sum, trip) => sum + (trip.totalCost || 0), 0);
+        return tripsForSelectedYear.reduce((sum, trip) => {
+            const idaCost = trip.departureFlight?.cost || 0;
+            const vueltaCost = trip.returnFlight?.cost || 0;
+            return sum + idaCost + vueltaCost;
+        }, 0);
     }, [tripsForSelectedYear]);
     
     const monthlyCosts = useMemo(() => {
         const costs = Array(12).fill(0);
         tripsForSelectedYear.forEach(trip => {
-            const dateStr = trip.departureFlight?.departureDateTime || trip.returnFlight?.departureDateTime;
-            if (dateStr && trip.totalCost) {
-                const month = new Date(dateStr).getMonth(); // 0-11
-                costs[month] += trip.totalCost;
+            if (trip.departureFlight?.departureDateTime && trip.departureFlight.cost) {
+                const month = new Date(trip.departureFlight.departureDateTime).getMonth();
+                costs[month] += trip.departureFlight.cost;
+            }
+            if (trip.returnFlight?.departureDateTime && trip.returnFlight.cost) {
+                const month = new Date(trip.returnFlight.departureDateTime).getMonth();
+                costs[month] += trip.returnFlight.cost;
             }
         });
         return costs;

@@ -14,11 +14,16 @@ type Platform = 'iOS' | 'Android' | 'Desktop';
 const InstallHelpModal: React.FC<InstallHelpModalProps> = ({ onClose }) => {
 
     const platform = useMemo((): Platform => {
-        // FIX: Cast window to any to access non-standard 'opera' property for browser detection.
-        const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+        const userAgent = navigator.userAgent;
+        
+        // La detección para iPads más nuevos requiere una comprobación adicional,
+        // ya que pueden reportar un userAgent de macOS.
+        const isIOS = /iPad|iPhone|iPod/.test(userAgent) || 
+                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+        if (isIOS) return 'iOS';
         if (/android/i.test(userAgent)) return 'Android';
-        // FIX: Cast window to any to access non-standard 'MSStream' property for browser detection.
-        if (/iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream) return 'iOS';
+        
         return 'Desktop';
     }, []);
 

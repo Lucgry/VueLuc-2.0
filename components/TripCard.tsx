@@ -1,11 +1,18 @@
-import React, { useState } from 'react';
-import type { Flight, Trip } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import type { Flight, Trip, BoardingPassData } from '../types';
 import { AirlineLogo } from './AirlineLogo';
 import { StarIcon } from './icons/StarIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { ExclamationTriangleIcon } from './icons/ExclamationTriangleIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { ShareIcon } from './icons/ShareIcon';
+import { saveBoardingPass, getBoardingPass, deleteBoardingPass, checkBoardingPassExists } from '../services/db';
+import BoardingPassViewer from './BoardingPassViewer';
+import { DocumentPlusIcon } from './icons/DocumentPlusIcon';
+import { DocumentTextIcon } from './icons/DocumentTextIcon';
+import { TrashIcon } from './icons/TrashIcon';
+import { Spinner } from './Spinner';
+
 
 const TicketIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -97,10 +104,93 @@ interface TripCardProps {
   isNext: boolean;
 }
 
+type DeletionState = 'idle' | 'confirming' | 'deleting';
+
 const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [passStatus, setPassStatus] = useState({ ida: false, vuelta: false });
+    const [deletingStatus, setDeletingStatus] = useState<{ ida: DeletionState, vuelta: DeletionState }>({ ida: 'idle', vuelta: 'idle' });
+    const [tripDeletionState, setTripDeletionState] = useState<'idle' | 'confirming'>('idle');
+    const [viewingBoardingPass, setViewingBoardingPass] = useState<BoardingPassData | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const flightTypeToUpload = useRef<'ida' | 'vuelta' | null>(null);
+
+    useEffect(() => {
+        if (isExpanded) {
+            const checkPasses = async () => {
+                const [idaExists, vueltaExists] = await Promise.all([
+                    checkBoardingPassExists(trip.id, 'ida'),
+                    checkBoardingPassExists(trip.id, 'vuelta'),
+                ]);
+                setPassStatus({ ida: idaExists, vuelta: vueltaExists });
+            };
+            checkPasses();
+        }
+    }, [trip.id, isExpanded]);
+
+    const handleAddBoardingPassClick = (e: React.MouseEvent, flightType: 'ida' | 'vuelta') => {
+        e.stopPropagation();
+        flightTypeToUpload.current = flightType;
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        const flightType = flightTypeToUpload.current;
+        if (file && flightType) {
+            try {
+                await saveBoardingPass(trip.id, flightType, file);
+                setPassStatus(prev => ({ ...prev, [flightType]: true }));
+            } catch (error) {
+                console.error("Error saving boarding pass:", error);
+                alert("No se pudo guardar la tarjeta de embarque.");
+            }
+        }
+        if (fileInputRef.current) fileInputRef.current.value = "";
+    };
     
+    const handleViewBoardingPass = async (e: React.MouseEvent, flightType: 'ida' | 'vuelta') => {
+        e.stopPropagation();
+        try {
+            const file = await getBoardingPass(trip.id, flightType);
+            if (file) {
+                const url = URL.createObjectURL(file);
+                setViewingBoardingPass({ fileURL: url, fileType: file.type });
+            } else {
+                alert("No se encontró la tarjeta de embarque. Por favor, intente recargar.");
+                setPassStatus(prev => ({ ...prev, [flightType]: false }));
+            }
+        } catch (error) {
+            console.error("Error loading boarding pass:", error);
+            alert("No se pudo cargar la tarjeta de embarque.");
+        }
+    };
+
+    const handleDeleteBoardingPass = (e: React.MouseEvent, flightType: 'ida' | 'vuelta') => {
+        e.stopPropagation();
+        setDeletingStatus(prev => ({ ...prev, [flightType]: 'confirming' }));
+    };
+    
+    const executeDelete = async (e: React.MouseEvent, flightType: 'ida' | 'vuelta') => {
+        e.stopPropagation();
+        setDeletingStatus(prev => ({ ...prev, [flightType]: 'deleting' }));
+        try {
+            await deleteBoardingPass(trip.id, flightType);
+            setPassStatus(prev => ({ ...prev, [flightType]: false }));
+        } catch (error) {
+            console.error("Error deleting boarding pass:", error);
+            alert(`No se pudo eliminar la tarjeta de embarque.`);
+        } finally {
+            setDeletingStatus(prev => ({ ...prev, [flightType]: 'idle' }));
+        }
+    };
+
+    const cancelDelete = (e: React.MouseEvent, flightType: 'ida' | 'vuelta') => {
+        e.stopPropagation();
+        setDeletingStatus(prev => ({ ...prev, [flightType]: 'idle' }));
+    };
+
     const idaFlight = trip.departureFlight;
     const vueltaFlight = trip.returnFlight;
     const idaDate = idaFlight?.departureDateTime;
@@ -115,7 +205,6 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
     }
     const status = getStatus();
     
-    // For collapsed view, show the first available airline logo
     const primaryAirline = trip.departureFlight?.airline || trip.returnFlight?.airline;
 
     let tripTypeText: string;
@@ -154,7 +243,8 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
         return text.trim();
     };
 
-    const handleShare = async () => {
+    const handleShare = async (e: React.MouseEvent) => {
+        e.stopPropagation();
         const shareText = generateShareableText(trip);
         const shareData = {
             title: `Viaje a ${trip.departureFlight?.arrivalCity || 'Destino'}`,
@@ -168,27 +258,44 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
                 console.error('Error al compartir:', error);
             }
         } else {
-            // Fallback to clipboard
             try {
                 await navigator.clipboard.writeText(shareText);
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
             } catch (error) {
                 console.error('Error al copiar al portapapeles:', error);
-                alert('No se pudo copiar. Por favor, hazlo manualmente.');
+                alert('No se pudo copiar. Por favor, hazlo manually.');
             }
         }
     };
 
 
     return (
+        <>
+        <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            className="hidden"
+            accept="image/*,application/pdf"
+        />
+        {viewingBoardingPass && (
+            <BoardingPassViewer 
+                fileURL={viewingBoardingPass.fileURL}
+                fileType={viewingBoardingPass.fileType}
+                onClose={() => {
+                    if (viewingBoardingPass.fileURL.startsWith('blob:')) {
+                        URL.revokeObjectURL(viewingBoardingPass.fileURL);
+                    }
+                    setViewingBoardingPass(null);
+                }}
+            />
+        )}
         <div className={`relative bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 transition-all duration-300 ${isPast ? 'opacity-60 hover:opacity-100' : ''} ${isNext ? 'ring-2 ring-indigo-500' : ''}`}>
-            {/* Clickable Header for Collapsed View & Toggle */}
             <div 
                 className="flex justify-between items-center p-4 cursor-pointer"
                 onClick={() => setIsExpanded(!isExpanded)}
             >
-                {/* Left Side: Date & Status */}
                  <div className="flex items-center space-x-4">
                      <div>
                         <div className="font-bold text-lg text-slate-800 dark:text-slate-200 capitalize">
@@ -206,8 +313,6 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
                         )}
                     </div>
                  </div>
-
-                {/* Right Side: Logo, Time, Ref, Chevron */}
                 <div className="flex items-center space-x-3 md:space-x-4">
                     <AirlineLogo airline={primaryAirline} size="sm" />
                     <div className="text-right">
@@ -221,38 +326,124 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
                 </div>
             </div>
 
-            {/* Expandable Details Section */}
-            <div className={`transition-[max-height] duration-500 ease-in-out overflow-hidden ${isExpanded ? 'max-h-[500px]' : 'max-h-0'}`}>
+            <div className={`transition-[max-height] duration-500 ease-in-out overflow-hidden ${isExpanded ? 'max-h-[600px]' : 'max-h-0'}`}>
                 <div className="px-4 pb-4">
                     <div className="bg-slate-100 dark:bg-slate-900 rounded-lg p-4">
                          <div className="flex flex-col md:flex-row md:space-x-6 space-y-4 md:space-y-0">
-                            {idaFlight && <FlightInfo flight={idaFlight} type="Ida" />}
+                            {idaFlight && (
+                                <div className="flex-1 space-y-3">
+                                    <FlightInfo flight={idaFlight} type="Ida" />
+                                    {passStatus.ida ? (
+                                        deletingStatus.ida === 'confirming' ? (
+                                            <div className="flex items-center space-x-2 bg-red-100 dark:bg-red-900/50 p-2 rounded-lg">
+                                                <span className="text-sm font-semibold text-red-800 dark:text-red-200 flex-grow text-center">¿Seguro?</span>
+                                                <button onClick={(e) => executeDelete(e, 'ida')} className="text-sm font-bold px-4 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition">Sí</button>
+                                                <button onClick={(e) => cancelDelete(e, 'ida')} className="text-sm font-medium px-4 py-1.5 rounded-md bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500 transition">No</button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex space-x-2">
+                                                <button 
+                                                    onClick={(e) => handleViewBoardingPass(e, 'ida')} 
+                                                    className="flex-grow text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-md bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/50 dark:text-green-300 dark:hover:bg-green-900 transition"
+                                                    disabled={deletingStatus.ida === 'deleting'}
+                                                >
+                                                    <DocumentTextIcon className="h-5 w-5" /><span>Ver Tarjeta</span>
+                                                </button>
+                                                <button 
+                                                    onClick={(e) => handleDeleteBoardingPass(e, 'ida')} 
+                                                    className="flex-shrink-0 p-2 rounded-md bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-400 dark:hover:bg-red-900 transition flex items-center justify-center w-[40px]" 
+                                                    aria-label="Eliminar tarjeta de embarque de ida"
+                                                    disabled={deletingStatus.ida === 'deleting'}
+                                                >
+                                                    {deletingStatus.ida === 'deleting' ? <Spinner /> : <TrashIcon className="h-5 w-5" />}
+                                                </button>
+                                            </div>
+                                        )
+                                    ) : (
+                                        <button onClick={(e) => handleAddBoardingPassClick(e, 'ida')} className="w-full text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-md bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 transition">
+                                            <DocumentPlusIcon className="h-5 w-5" /><span>Agregar Tarjeta</span>
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
                             {idaFlight && vueltaFlight && (
                             <div className="border-r border-dashed border-slate-300 dark:border-slate-600 hidden md:block"></div>
                             )}
-                            {vueltaFlight && <FlightInfo flight={vueltaFlight} type="Vuelta" />}
+                            
+                            {vueltaFlight && (
+                                <div className="flex-1 space-y-3">
+                                    <FlightInfo flight={vueltaFlight} type="Vuelta" />
+                                    {passStatus.vuelta ? (
+                                         deletingStatus.vuelta === 'confirming' ? (
+                                            <div className="flex items-center space-x-2 bg-red-100 dark:bg-red-900/50 p-2 rounded-lg">
+                                                <span className="text-sm font-semibold text-red-800 dark:text-red-200 flex-grow text-center">¿Seguro?</span>
+                                                <button onClick={(e) => executeDelete(e, 'vuelta')} className="text-sm font-bold px-4 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition">Sí</button>
+                                                <button onClick={(e) => cancelDelete(e, 'vuelta')} className="text-sm font-medium px-4 py-1.5 rounded-md bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500 transition">No</button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex space-x-2">
+                                                <button 
+                                                    onClick={(e) => handleViewBoardingPass(e, 'vuelta')} 
+                                                    className="flex-grow text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-md bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/50 dark:text-green-300 dark:hover:bg-green-900 transition"
+                                                    disabled={deletingStatus.vuelta === 'deleting'}
+                                                >
+                                                    <DocumentTextIcon className="h-5 w-5" /><span>Ver Tarjeta</span>
+                                                </button>
+                                                <button 
+                                                    onClick={(e) => handleDeleteBoardingPass(e, 'vuelta')} 
+                                                    className="flex-shrink-0 p-2 rounded-md bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-400 dark:hover:bg-red-900 transition flex items-center justify-center w-[40px]" 
+                                                    aria-label="Eliminar tarjeta de embarque de vuelta"
+                                                    disabled={deletingStatus.vuelta === 'deleting'}
+                                                >
+                                                    {deletingStatus.vuelta === 'deleting' ? <Spinner /> : <TrashIcon className="h-5 w-5" />}
+                                                </button>
+                                            </div>
+                                        )
+                                    ) : (
+                                        <button onClick={(e) => handleAddBoardingPassClick(e, 'vuelta')} className="w-full text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-md bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 transition">
+                                            <DocumentPlusIcon className="h-5 w-5" /><span>Agregar Tarjeta</span>
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                     
                     <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
                         <div className="text-sm space-y-1 text-slate-600 dark:text-slate-300">
-                           {trip.totalCost != null && <p><strong>Costo:</strong> ${trip.totalCost.toLocaleString('es-AR')}</p>}
-                           {trip.paymentMethod && <p><strong>Forma de pago:</strong> {formatPaymentMethod(trip.paymentMethod)}</p>}
+                           {idaFlight?.cost != null && (
+                                <p><strong>Costo Ida:</strong> ${idaFlight.cost.toLocaleString('es-AR')} ({formatPaymentMethod(idaFlight.paymentMethod)})</p>
+                           )}
+                           {vueltaFlight?.cost != null && (
+                                <p><strong>Costo Vuelta:</strong> ${vueltaFlight.cost.toLocaleString('es-AR')} ({formatPaymentMethod(vueltaFlight.paymentMethod)})</p>
+                           )}
                         </div>
                         <div className="flex items-center space-x-2">
-                             <button onClick={handleShare} className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200/50 hover:bg-indigo-100 dark:bg-slate-700/50 dark:hover:bg-indigo-900/40">
+                           {tripDeletionState === 'confirming' ? (
+                                <div className="flex items-center space-x-2 bg-red-100 dark:bg-red-900/50 p-2 rounded-lg w-full justify-center">
+                                    <span className="text-sm font-semibold text-red-800 dark:text-red-200">¿Eliminar viaje?</span>
+                                    <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-sm font-bold px-4 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition">Sí</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setTripDeletionState('idle'); }} className="text-sm font-medium px-4 py-1.5 rounded-md bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500 transition">No</button>
+                                </div>
+                           ) : (
+                            <>
+                             <button onClick={(e) => handleShare(e)} className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200/50 hover:bg-indigo-100 dark:bg-slate-700/50 dark:hover:bg-indigo-900/40">
                                  <ShareIcon className="h-4 w-4" />
                                  <span>{copied ? '¡Copiado!' : 'Compartir'}</span>
                             </button>
-                            <button onClick={onDelete} className="text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200/50 hover:bg-red-100 dark:bg-slate-700/50 dark:hover:bg-red-900/40">
+                            <button onClick={(e) => { e.stopPropagation(); setTripDeletionState('confirming'); }} className="text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200/50 hover:bg-red-100 dark:bg-slate-700/50 dark:hover:bg-red-900/40">
                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                  <span>Eliminar</span>
                             </button>
+                            </>
+                           )}
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+        </>
     );
 };
 

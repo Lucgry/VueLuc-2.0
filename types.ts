@@ -7,6 +7,8 @@ export interface Flight {
   arrivalCity: string | null;
   departureDateTime: string | null;
   arrivalDateTime: string | null;
+  cost: number | null;
+  paymentMethod: string | null;
 }
 
 export interface Trip {
@@ -14,7 +16,17 @@ export interface Trip {
   createdAt: string;
   departureFlight: Flight | null;
   returnFlight: Flight | null;
-  totalCost: number | null;
-  paymentMethod: string | null;
   bookingReference: string | null;
+}
+
+export interface BoardingPassData {
+  fileURL: string;
+  fileType: string;
+}
+
+export interface BoardingPassFile {
+    id: string;
+    tripId: string;
+    flightType: 'ida' | 'vuelta';
+    file: File;
 }
