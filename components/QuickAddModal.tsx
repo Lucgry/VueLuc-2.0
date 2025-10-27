@@ -131,7 +131,7 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex justify-center items-center z-50 p-4" onClick={onClose}>
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl w-full max-w-2xl transform transition-all flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-                <form onSubmit={handleSubmit} className="flex flex-col h-full">
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
                     {/* --- HEADER --- */}
                     <div className="p-6 md:p-8 flex-shrink-0 border-b border-slate-200 dark:border-slate-700">
                         <div className="flex items-start sm:items-center space-x-4">
@@ -146,39 +146,41 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
                     </div>
 
                     {/* --- SCROLLABLE CONTENT --- */}
-                    <div className="overflow-y-auto px-6 md:px-8 py-4 flex-grow">
-                        <p className="text-sm text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 p-3 rounded-md mb-4">
-                            Completa los detalles para el vuelo de <b>ida</b> y/o <b>vuelta</b>. Si es un viaje de un solo tramo, simplemente deja los campos del otro tramo en blanco.
-                        </p>
+                    <div className="overflow-y-auto flex-grow min-h-0">
+                        <div className="px-6 md:px-8 py-4">
+                            <p className="text-sm text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 p-3 rounded-md mb-4">
+                                Completa los detalles para el vuelo de <b>ida</b> y/o <b>vuelta</b>. Si es un viaje de un solo tramo, simplemente deja los campos del otro tramo en blanco.
+                            </p>
 
-                        <div className="space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* VUELO IDA */}
-                                <fieldset className="border p-3 rounded-md border-slate-300 dark:border-slate-600 space-y-3">
-                                    <legend className="px-2 font-semibold text-indigo-600 dark:text-indigo-400">✈️ Ida</legend>
-                                    <input type="date" value={idaDate} onChange={e => setIdaDate(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
-                                    <input type="text" value={idaFlightNum} onChange={e => setIdaFlightNum(e.target.value)} placeholder="Nº de Vuelo" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
-                                    <input type="time" value={idaTime} onChange={e => setIdaTime(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
-                                    <input type="number" step="0.01" value={idaCost} onChange={e => setIdaCost(e.target.value)} placeholder="Costo Ida" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
-                                    <select value={idaPaymentMethod} onChange={e => setIdaPaymentMethod(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700">
-                                        {paymentOptions.map(o => <option key={`ida-${o}`} value={o}>{o}</option>)}
-                                    </select>
-                                </fieldset>
-                                {/* VUELO VUELTA */}
-                                <fieldset className="border p-3 rounded-md border-slate-300 dark:border-slate-600 space-y-3">
-                                    <legend className="px-2 font-semibold text-indigo-600 dark:text-indigo-400">✈️ Vuelta</legend>
-                                    <input type="date" value={vueltaDate} onChange={e => setVueltaDate(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
-                                    <input type="text" value={vueltaFlightNum} onChange={e => setVueltaFlightNum(e.target.value)} placeholder="Nº de Vuelo" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
-                                    <input type="time" value={vueltaTime} onChange={e => setVueltaTime(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
-                                    <input type="number" step="0.01" value={vueltaCost} onChange={e => setVueltaCost(e.target.value)} placeholder="Costo Vuelta" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
-                                    <select value={vueltaPaymentMethod} onChange={e => setVueltaPaymentMethod(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700">
-                                        {paymentOptions.map(o => <option key={`vuelta-${o}`} value={o}>{o}</option>)}
-                                    </select>
-                                </fieldset>
-                            </div>
-                            <div className="pt-2">
-                                <label htmlFor="booking-ref" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Código de Reserva</label>
-                                <input id="booking-ref" type="text" value={bookingRef} onChange={e => setBookingRef(e.target.value)} placeholder="Código único o combinado" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" required />
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* VUELO IDA */}
+                                    <fieldset className="border p-3 rounded-md border-slate-300 dark:border-slate-600 space-y-3">
+                                        <legend className="px-2 font-semibold text-indigo-600 dark:text-indigo-400">✈️ Ida</legend>
+                                        <input type="date" value={idaDate} onChange={e => setIdaDate(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
+                                        <input type="text" value={idaFlightNum} onChange={e => setIdaFlightNum(e.target.value)} placeholder="Nº de Vuelo" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
+                                        <input type="time" value={idaTime} onChange={e => setIdaTime(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
+                                        <input type="number" step="0.01" value={idaCost} onChange={e => setIdaCost(e.target.value)} placeholder="Costo Ida" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
+                                        <select value={idaPaymentMethod} onChange={e => setIdaPaymentMethod(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700">
+                                            {paymentOptions.map(o => <option key={`ida-${o}`} value={o}>{o}</option>)}
+                                        </select>
+                                    </fieldset>
+                                    {/* VUELO VUELTA */}
+                                    <fieldset className="border p-3 rounded-md border-slate-300 dark:border-slate-600 space-y-3">
+                                        <legend className="px-2 font-semibold text-indigo-600 dark:text-indigo-400">✈️ Vuelta</legend>
+                                        <input type="date" value={vueltaDate} onChange={e => setVueltaDate(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
+                                        <input type="text" value={vueltaFlightNum} onChange={e => setVueltaFlightNum(e.target.value)} placeholder="Nº de Vuelo" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
+                                        <input type="time" value={vueltaTime} onChange={e => setVueltaTime(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
+                                        <input type="number" step="0.01" value={vueltaCost} onChange={e => setVueltaCost(e.target.value)} placeholder="Costo Vuelta" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" />
+                                        <select value={vueltaPaymentMethod} onChange={e => setVueltaPaymentMethod(e.target.value)} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700">
+                                            {paymentOptions.map(o => <option key={`vuelta-${o}`} value={o}>{o}</option>)}
+                                        </select>
+                                    </fieldset>
+                                </div>
+                                <div className="pt-2">
+                                    <label htmlFor="booking-ref" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Código de Reserva</label>
+                                    <input id="booking-ref" type="text" value={bookingRef} onChange={e => setBookingRef(e.target.value)} placeholder="Código único o combinado" className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700" required />
+                                </div>
                             </div>
                         </div>
                     </div>
