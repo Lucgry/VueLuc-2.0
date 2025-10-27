@@ -15,10 +15,8 @@ import QuickAddModal from './components/QuickAddModal';
 import { BoltIcon } from './components/icons/BoltIcon';
 import { initDB, deleteBoardingPassesForTrip } from './services/db';
 import AirportModeView from './components/AirportModeView';
-
-
-type ListFilter = 'all' | 'future' | 'currentMonth' | 'completed';
-type View = 'list' | 'calendar' | 'costs';
+import ApiKeySetup from './components/ApiKeySetup';
+import { Spinner } from './components/Spinner';
 
 // A type guard for BeforeInstallPromptEvent
 interface BeforeInstallPromptEvent extends Event {
@@ -29,6 +27,22 @@ interface BeforeInstallPromptEvent extends Event {
   }>;
   prompt(): Promise<void>;
 }
+
+// FIX: Define AIStudio interface to resolve a type conflict for window.aistudio.
+interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+}
+
+declare global {
+    interface Window {
+        aistudio?: AIStudio;
+    }
+}
+
+// FIX: Define missing View and ListFilter types.
+type View = 'list' | 'calendar' | 'costs';
+type ListFilter = 'future' | 'completed' | 'currentMonth' | 'all';
 
 
 const getTripStartDate = (trip: Trip): Date | null => {
@@ -59,6 +73,8 @@ const App: React.FC = () => {
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallBannerVisible, setIsInstallBannerVisible] = useState(false);
   const [isAirportMode, setIsAirportMode] = useState(false);
+  const [isKeyConfigured, setIsKeyConfigured] = useState(false);
+  const [isCheckingKey, setIsCheckingKey] = useState(true);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'light' || savedTheme === 'dark') {
@@ -121,6 +137,35 @@ const App: React.FC = () => {
       }
       localStorage.setItem('theme', theme);
   }, [theme]);
+  
+    useEffect(() => {
+        const checkKey = async () => {
+            try {
+                if (window.aistudio && await window.aistudio.hasSelectedApiKey()) {
+                    setIsKeyConfigured(true);
+                }
+            } catch (error) {
+                console.error("Error checking for API key:", error);
+                setIsKeyConfigured(false);
+            } finally {
+                setIsCheckingKey(false);
+            }
+        };
+        checkKey();
+    }, []);
+
+    const handleSelectKey = async () => {
+        if (window.aistudio) {
+            try {
+                await window.aistudio.openSelectKey();
+                setIsKeyConfigured(true);
+            } catch (error) {
+                console.error("Error opening API key selection:", error);
+            }
+        } else {
+            alert("La funcionalidad para seleccionar la API key no está disponible en este entorno.");
+        }
+    };
 
   const handleToggleTheme = () => {
       setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
@@ -299,6 +344,19 @@ const App: React.FC = () => {
         return sortedTrips;
     }
   }, [sortedTrips, listFilter]);
+  
+  if (isCheckingKey) {
+    return (
+        <div className="flex items-center justify-center min-h-screen">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div>
+        </div>
+    );
+  }
+
+  if (!isKeyConfigured) {
+    return <ApiKeySetup onSelectKey={handleSelectKey} />;
+  }
+
 
   if (isAirportMode) {
     if (nextUpcomingFlightInfo) {

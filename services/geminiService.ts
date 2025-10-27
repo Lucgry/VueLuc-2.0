@@ -135,12 +135,17 @@ export const parseFlightEmail = async (emailText: string, pdfBase64?: string | n
   } catch (error) {
     console.error("Error parsing flight email with Gemini:", error);
     const message = error instanceof Error ? error.message : "An unknown error occurred during parsing.";
+
+    if (message.includes('API key not valid') || message.includes('API key is invalid') || message.includes('Requested entity was not found')) {
+        throw new Error("La API Key seleccionada no es válida o no tiene permisos. Por favor, refresca la página para seleccionar una nueva clave.");
+    }
+    if (message.includes("La clave de API no está configurada")) {
+        throw new Error("Error de configuración: La clave de API no está configurada. No se puede comunicar con el servicio de IA.");
+    }
     if (message.includes('JSON')) {
         throw new Error("La IA no pudo procesar el email. Asegúrate de que el texto copiado sea claro y contenga los detalles del vuelo.");
     }
-    if (message.includes("API")) {
-        throw new Error(`Error de configuración: ${message}`);
-    }
+
     throw new Error(`Error al procesar el email: ${message}`);
   }
 };
