@@ -4,13 +4,10 @@ interface BoardingPassViewerProps {
   fileURL: string;
   fileType: string;
   onClose: () => void;
-  isAirportModeEnhanced?: boolean;
 }
 
-const BoardingPassViewer: React.FC<BoardingPassViewerProps> = ({ fileURL, fileType, onClose, isAirportModeEnhanced = false }) => {
+const BoardingPassViewer: React.FC<BoardingPassViewerProps> = ({ fileURL, fileType, onClose }) => {
   
-  const enhancedStyles = isAirportModeEnhanced ? 'brightness-[1.75]' : '';
-
   return (
     <div 
       className="fixed inset-0 bg-black bg-opacity-90 backdrop-blur-sm flex justify-center items-center z-[100] p-4 w-screen h-screen" 
@@ -29,9 +26,9 @@ const BoardingPassViewer: React.FC<BoardingPassViewerProps> = ({ fileURL, fileTy
       
       <div className="w-full h-full flex items-center justify-center" onClick={e => e.stopPropagation()}>
         {fileType.startsWith('image/') ? (
-          <img src={fileURL} alt="Tarjeta de Embarque" className={`max-w-full max-h-full object-contain ${enhancedStyles}`} />
+          <img src={fileURL} alt="Tarjeta de Embarque" className="max-w-full max-h-full object-contain" />
         ) : fileType === 'application/pdf' ? (
-          <object data={fileURL} type="application/pdf" className={`w-full h-full ${enhancedStyles}`}>
+          <object data={fileURL} type="application/pdf" className="w-full h-full">
             <div className="text-white text-center p-6 bg-slate-700 rounded-lg shadow-lg">
                 <p className="text-xl font-bold mb-2">Error al mostrar PDF</p>
                 <p className="mb-4">Tu navegador no pudo mostrar el PDF aquí.</p>

@@ -5,7 +5,6 @@ import { AirlineLogo } from './AirlineLogo';
 import BoardingPassViewer from './BoardingPassViewer';
 import { Spinner } from './Spinner';
 import { XCircleIcon } from './icons/XCircleIcon';
-import { SunIcon } from './icons/SunIcon';
 import { DocumentPlusIcon } from './icons/DocumentPlusIcon';
 
 interface AirportModeViewProps {
@@ -38,7 +37,6 @@ const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightT
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isViewerOpen, setIsViewerOpen] = useState(false);
-    const [isEnhancedBrightness, setIsEnhancedBrightness] = useState(true);
 
     useEffect(() => {
         const fetchBoardingPass = async () => {
@@ -78,7 +76,6 @@ const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightT
                     fileURL={boardingPassData.fileURL}
                     fileType={boardingPassData.fileType}
                     onClose={() => setIsViewerOpen(false)}
-                    isAirportModeEnhanced={isEnhancedBrightness}
                 />
             )}
             <div className="fixed inset-0 bg-slate-100 dark:bg-slate-900 z-50 p-4 flex flex-col">
@@ -130,18 +127,6 @@ const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightT
                             </div>
                         )}
                     </div>
-
-                     {boardingPassData && (
-                        <div className="flex justify-center items-center space-x-4 p-2">
-                             <button 
-                                onClick={() => setIsEnhancedBrightness(prev => !prev)}
-                                className={`flex items-center space-x-2 px-4 py-2 text-sm font-semibold rounded-full border-2 transition ${isEnhancedBrightness ? 'bg-amber-400 border-amber-400 text-black' : 'bg-transparent border-slate-400 text-slate-500'}`}
-                             >
-                                <SunIcon className="w-5 h-5" />
-                                <span>Brillo de pantalla</span>
-                            </button>
-                        </div>
-                     )}
                 </main>
             </div>
         </>
