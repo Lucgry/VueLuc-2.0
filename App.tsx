@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Trip, Flight } from './types';
+import type { Trip } from './types';
 import Header from './components/Header';
 import TripList from './components/TripList';
 import EmailImporter from './components/EmailImporter';
@@ -16,7 +16,6 @@ import { BoltIcon } from './components/icons/BoltIcon';
 import { initDB, deleteBoardingPassesForTrip } from './services/db';
 import AirportModeView from './components/AirportModeView';
 import ApiKeySetup from './components/ApiKeySetup';
-import { Spinner } from './components/Spinner';
 
 // A type guard for BeforeInstallPromptEvent
 interface BeforeInstallPromptEvent extends Event {
@@ -28,19 +27,6 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
-// FIX: Define AIStudio interface to resolve a type conflict for window.aistudio.
-interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-}
-
-declare global {
-    interface Window {
-        aistudio?: AIStudio;
-    }
-}
-
-// FIX: Define missing View and ListFilter types.
 type View = 'list' | 'calendar' | 'costs';
 type ListFilter = 'future' | 'completed' | 'currentMonth' | 'all';
 
@@ -73,8 +59,7 @@ const App: React.FC = () => {
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallBannerVisible, setIsInstallBannerVisible] = useState(false);
   const [isAirportMode, setIsAirportMode] = useState(false);
-  const [isKeyConfigured, setIsKeyConfigured] = useState(false);
-  const [isCheckingKey, setIsCheckingKey] = useState(true);
+  const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('apiKey'));
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'light' || savedTheme === 'dark') {
@@ -138,34 +123,18 @@ const App: React.FC = () => {
       localStorage.setItem('theme', theme);
   }, [theme]);
   
-    useEffect(() => {
-        const checkKey = async () => {
-            try {
-                if (window.aistudio && await window.aistudio.hasSelectedApiKey()) {
-                    setIsKeyConfigured(true);
-                }
-            } catch (error) {
-                console.error("Error checking for API key:", error);
-                setIsKeyConfigured(false);
-            } finally {
-                setIsCheckingKey(false);
-            }
-        };
-        checkKey();
-    }, []);
+  const handleApiKeySave = (key: string) => {
+    if (key.trim()) {
+        localStorage.setItem('apiKey', key.trim());
+        setApiKey(key.trim());
+    }
+  };
 
-    const handleSelectKey = async () => {
-        if (window.aistudio) {
-            try {
-                await window.aistudio.openSelectKey();
-                setIsKeyConfigured(true);
-            } catch (error) {
-                console.error("Error opening API key selection:", error);
-            }
-        } else {
-            alert("La funcionalidad para seleccionar la API key no está disponible en este entorno.");
-        }
-    };
+  const handleInvalidApiKey = () => {
+      alert("La API Key no es válida o ha expirado. Por favor, configúrala de nuevo.");
+      localStorage.removeItem('apiKey');
+      setApiKey(null);
+  };
 
   const handleToggleTheme = () => {
       setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
@@ -280,7 +249,7 @@ const App: React.FC = () => {
     sessionStorage.setItem('installBannerDismissed', 'true');
     setIsInstallBannerVisible(false);
   };
-
+  
   const sortedTrips = useMemo(() => {
       return [...trips].sort((a, b) => {
           const dateA = getTripStartDate(a);
@@ -345,16 +314,8 @@ const App: React.FC = () => {
     }
   }, [sortedTrips, listFilter]);
   
-  if (isCheckingKey) {
-    return (
-        <div className="flex items-center justify-center min-h-screen">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500"></div>
-        </div>
-    );
-  }
-
-  if (!isKeyConfigured) {
-    return <ApiKeySetup onSelectKey={handleSelectKey} />;
+  if (!apiKey) {
+    return <ApiKeySetup onKeySave={handleApiKeySave} />;
   }
 
 
@@ -389,7 +350,7 @@ const App: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-4 md:p-6">
-      {isModalOpen && <EmailImporter onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} />}
+      {isModalOpen && <EmailImporter apiKey={apiKey} onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} onInvalidApiKey={handleInvalidApiKey} />}
       {isQuickAddModalOpen && <QuickAddModal onClose={() => setIsQuickAddModalOpen(false)} onAddTrip={handleAddTrip} />}
       
       <Header 
@@ -429,10 +390,14 @@ const App: React.FC = () => {
       
       {!isAirportMode && (
           <div className="fixed bottom-6 right-6 flex flex-col items-center space-y-3 z-40">
-              <button onClick={() => setIsQuickAddModalOpen(true)} className="bg-amber-500 text-white p-3 rounded-full shadow-lg hover:bg-amber-600 transition" aria-label="Agregado rápido">
+              <button onClick={() => setIsQuickAddModalOpen(true)} className="bg-amber-500 text-white p-3 rounded-full shadow-lg hover:bg-amber-600 transition" aria-label="Agregar viaje manualmente">
                   <BoltIcon className="h-7 w-7" />
               </button>
-               <button onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-white p-4 rounded-full shadow-lg hover:bg-indigo-700 transition animate-pulse-glow" aria-label="Agregar viaje">
+               <button 
+                onClick={() => setIsModalOpen(true)} 
+                className="bg-indigo-600 text-white p-4 rounded-full shadow-lg transition hover:bg-indigo-700 animate-pulse-glow"
+                aria-label="Importar viaje usando IA"
+               >
                   <PlusCircleIcon className="h-8 w-8" />
               </button>
           </div>

@@ -32,7 +32,7 @@ const tripSchema = {
   required: ["bookingReference", "flights"]
 };
 
-export const parseFlightEmail = async (emailText: string, pdfBase64?: string | null): Promise<Omit<Trip, 'id' | 'createdAt'>> => {
+export const parseFlightEmail = async (emailText: string, apiKey: string, pdfBase64?: string | null): Promise<Omit<Trip, 'id' | 'createdAt'>> => {
   const pdfInstruction = pdfBase64 
     ? `
     DATOS DEL PDF ADJUNTO:
@@ -58,7 +58,6 @@ export const parseFlightEmail = async (emailText: string, pdfBase64?: string | n
   `;
 
   try {
-    const apiKey = process.env.API_KEY;
     if (!apiKey) {
       throw new Error("La clave de API no está configurada. No se puede comunicar con el servicio de IA.");
     }
@@ -137,7 +136,7 @@ export const parseFlightEmail = async (emailText: string, pdfBase64?: string | n
     const message = error instanceof Error ? error.message : "An unknown error occurred during parsing.";
 
     if (message.includes('API key not valid') || message.includes('API key is invalid') || message.includes('Requested entity was not found')) {
-        throw new Error("La API Key seleccionada no es válida o no tiene permisos. Por favor, refresca la página para seleccionar una nueva clave.");
+        throw new Error("La API Key seleccionada no es válida o no tiene permisos. Por favor, configúrala de nuevo.");
     }
     if (message.includes("La clave de API no está configurada")) {
         throw new Error("Error de configuración: La clave de API no está configurada. No se puede comunicar con el servicio de IA.");
