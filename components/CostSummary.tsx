@@ -34,6 +34,10 @@ const formatPaymentMethod = (paymentMethod: string | null): string => {
   if (paymentMethod.includes('8769')) return 'Crédito Ciudad';
   if (paymentMethod.includes('8059')) return 'Crédito Yoy';
   
+  // Return the formatted name if it's already one of the standards, otherwise return the raw string.
+  const standards = ['Débito Macro', 'Débito Ciudad', 'Crédito Macro', 'Crédito Ciudad', 'Crédito Yoy'];
+  if (standards.includes(paymentMethod)) return paymentMethod;
+
   return paymentMethod;
 };
 
@@ -91,8 +95,10 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
         tripsForSelectedYear.forEach(trip => {
             [trip.departureFlight, trip.returnFlight].forEach(flight => {
                 if (flight && flight.cost && flight.paymentMethod) {
-                    const method = flight.paymentMethod;
-                    costsByMethod[method] = (costsByMethod[method] || 0) + flight.cost;
+                    const formattedMethod = formatPaymentMethod(flight.paymentMethod);
+                    if (formattedMethod !== 'N/A') {
+                        costsByMethod[formattedMethod] = (costsByMethod[formattedMethod] || 0) + flight.cost;
+                    }
                 }
             });
         });
@@ -154,7 +160,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                  <StatCard 
                     icon={<CurrencyIcon className="h-6 w-6" />}
                     label="Gasto Total"
-                    value={`$${totalCostForYear.toLocaleString('es-AR')}`}
+                    value={`$${totalCostForYear.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     gradient="bg-gradient-to-br from-teal-500 to-cyan-600"
                 />
             </div>
@@ -169,8 +175,8 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                         return (
                             <div key={method}>
                                 <div className="flex justify-between items-center mb-1 text-sm">
-                                    <span className="font-semibold text-slate-600 dark:text-slate-300">{formatPaymentMethod(method)}</span>
-                                    <span className="font-bold text-slate-800 dark:text-slate-100">${total.toLocaleString('es-AR')}</span>
+                                    <span className="font-semibold text-slate-600 dark:text-slate-300">{method}</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-100">${total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
                                 <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-2">
                                     <div
@@ -204,7 +210,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                                 />
                             </div>
                             <span className="font-bold text-slate-700 dark:text-slate-200 w-24 text-left">
-                                ${cost.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                ${cost.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
                         </div>
                     );

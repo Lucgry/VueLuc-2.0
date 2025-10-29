@@ -377,7 +377,7 @@ const App: React.FC = () => {
         onToggleAirportMode={handleToggleAirportMode}
       />
       
-      <main>
+      <main className="pb-40">
           <>
             {nextUpcomingFlightInfo && (
               <NextTripCard 
