@@ -1,16 +1,47 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="512" height="512" rx="96" fill="url(#paint0_linear_1_2)"/>
-<g filter="url(#shadow)">
-    <path d="M128 352L243 237L384 128L309 384L243 237" fill="#FFFFFF"/>
-    <path d="M128 352L243 237L309 384" fill="white" fill-opacity="0.8"/>
+<rect width="512" height="512" rx="96" fill="url(#paint0_linear_new_icon)"/>
+
+<!-- Shadow -->
+<path d="M208 138.667 L405.333 224 L495.333 269 L409.333 461.333 L384 404 H156 L144 392 V248 L208 215.333 V138.667 Z" fill="#000000" opacity="0.15"/>
+
+
+<!-- Icon -->
+<g>
+    <!-- Calendar -->
+    <g>
+        <path d="M144 248 H384 V384 L364 404 H156 L144 392 V248 Z" fill="white"/>
+        <path d="M364 404 L384 384 V404 H364Z" fill="#E5E7EB"/>
+        <rect x="184" y="216" width="32" height="24" rx="4" fill="white"/>
+        <rect x="296" y="216" width="32" height="24" rx="4" fill="white"/>
+        <g fill="#E5E7EB">
+            <rect x="168" y="280" width="40" height="20" rx="4"/><rect x="224" y="280" width="40" height="20" rx="4"/><rect x="280" y="280" width="40" height="20" rx="4"/><rect x="336" y="280" width="24" height="20" rx="4"/>
+            <rect x="168" y="316" width="40" height="20" rx="4"/><rect x="224" y="316" width="40" height="20" rx="4"/><rect x="280" y="316" width="40" height="20" rx="4"/><rect x="336" y="316" width="24" height="20" rx="4"/>
+            <rect x="168" y="352" width="40" height="20" rx="4"/><rect x="224" y="352" width="40" height="20" rx="4"/><rect x="280" y="352" width="40" height="20" rx="4"/><rect x="336" y="352" width="24" height="20" rx="4"/>
+        </g>
+    </g>
+
+    <!-- Paper Plane -->
+    <g>
+        <path d="M208 138.667L405.333 224L309.333 256L261.333 341.333L208 138.667Z" fill="white"/>
+        <path d="M405.333 224L309.333 256L208 138.667" fill="#F3F4F6"/>
+    </g>
+    
+    <!-- Trail -->
+    <g stroke="white" stroke-width="12" stroke-linecap="round">
+        <path d="M208 240L154.667 266.667"/>
+        <path d="M224 261.333L181.333 282.667"/>
+    </g>
+    
+    <!-- W circle -->
+    <g>
+      <circle cx="165.333" cy="298.667" r="24" fill="white"/>
+      <text x="165.333" y="309.667" font-family="Inter, sans-serif" font-size="28" font-weight="900" text-anchor="middle" fill="#7E22CE">W</text>
+    </g>
 </g>
 <defs>
-<linearGradient id="paint0_linear_1_2" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-<stop stop-color="#6366F1"/>
-<stop offset="1" stop-color="#8B5CF6"/>
+<linearGradient id="paint0_linear_new_icon" x1="0" y1="512" x2="512" y2="0" gradientUnits="userSpaceOnUse">
+<stop stop-color="#8F5CF6"/>
+<stop offset="1" stop-color="#5B21B6"/>
 </linearGradient>
-<filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-  <feDropShadow dx="5" dy="10" stdDeviation="8" flood-color="#000000" flood-opacity="0.2"/>
-</filter>
 </defs>
 </svg>

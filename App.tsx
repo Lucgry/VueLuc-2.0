@@ -13,6 +13,7 @@ import { CalculatorIcon } from './components/icons/CalculatorIcon';
 import InstallBanner from './components/InstallBanner';
 import QuickAddModal from './components/QuickAddModal';
 import { BoltIcon } from './components/icons/BoltIcon';
+import { MailIcon } from './components/icons/MailIcon';
 import { initDB, deleteBoardingPassesForTrip } from './services/db';
 import AirportModeView from './components/AirportModeView';
 import ApiKeySetup from './components/ApiKeySetup';
@@ -54,6 +55,7 @@ const App: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isQuickAddModalOpen, setIsQuickAddModalOpen] = useState(false);
+  const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [view, setView] = useState<View>('list');
   const [listFilter, setListFilter] = useState<ListFilter>('future');
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
@@ -260,31 +262,36 @@ const App: React.FC = () => {
       });
   }, [trips]);
 
-  const nextTrip = useMemo(() => {
-      const now = new Date();
-      return sortedTrips.find(trip => {
-          const startDate = getTripStartDate(trip);
-          return startDate ? startDate >= now : false;
-      }) || null;
-  }, [sortedTrips]);
-  
   const nextUpcomingFlightInfo = useMemo(() => {
     const now = new Date();
-    for (const trip of sortedTrips) {
-        if (trip.departureFlight?.departureDateTime) {
-            const depDate = new Date(trip.departureFlight.departureDateTime);
-            if (depDate > now) {
-                return { trip, flight: trip.departureFlight, flightType: 'ida' as const };
-            }
+    
+    // Flatten all future flights into a single array
+    const allFutureFlights = sortedTrips.flatMap(trip => {
+      const flights = [];
+      if (trip.departureFlight?.departureDateTime) {
+        const depDate = new Date(trip.departureFlight.departureDateTime);
+        if (depDate > now) {
+          flights.push({ trip, flight: trip.departureFlight, flightType: 'ida' as const, date: depDate });
         }
-        if (trip.returnFlight?.departureDateTime) {
-            const retDate = new Date(trip.returnFlight.departureDateTime);
-            if (retDate > now) {
-                return { trip, flight: trip.returnFlight, flightType: 'vuelta' as const };
-            }
+      }
+      if (trip.returnFlight?.departureDateTime) {
+        const retDate = new Date(trip.returnFlight.departureDateTime);
+        if (retDate > now) {
+          flights.push({ trip, flight: trip.returnFlight, flightType: 'vuelta' as const, date: retDate });
         }
+      }
+      return flights;
+    });
+
+    if (allFutureFlights.length === 0) {
+      return null;
     }
-    return null;
+
+    // Sort by date to find the soonest one
+    allFutureFlights.sort((a, b) => a.date.getTime() - b.date.getTime());
+    
+    const { trip, flight, flightType } = allFutureFlights[0];
+    return { trip, flight, flightType };
   }, [sortedTrips]);
 
   const filteredTrips = useMemo(() => {
@@ -313,6 +320,16 @@ const App: React.FC = () => {
         return sortedTrips;
     }
   }, [sortedTrips, listFilter]);
+  
+  const handleQuickAddClick = () => {
+    setIsQuickAddModalOpen(true);
+    setIsFabMenuOpen(false);
+  };
+
+  const handleAiImportClick = () => {
+    setIsModalOpen(true);
+    setIsFabMenuOpen(false);
+  };
   
   if (!apiKey) {
     return <ApiKeySetup onKeySave={handleApiKeySave} />;
@@ -362,7 +379,12 @@ const App: React.FC = () => {
       
       <main>
           <>
-            {nextTrip && <NextTripCard trip={nextTrip} />}
+            {nextUpcomingFlightInfo && (
+              <NextTripCard 
+                flight={nextUpcomingFlightInfo.flight}
+                flightType={nextUpcomingFlightInfo.flightType}
+              />
+            )}
 
             <div className="flex justify-between items-center mb-4">
               <div className="flex space-x-1 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm p-1 rounded-lg border border-slate-200/80 dark:border-slate-700/80">
@@ -382,25 +404,68 @@ const App: React.FC = () => {
               )}
             </div>
 
-            {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTrip?.id || null} />}
+            {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextUpcomingFlightInfo?.trip.id || null} />}
             {view === 'calendar' && <CalendarView trips={trips} />}
             {view === 'costs' && <CostSummary trips={trips} />}
           </>
       </main>
       
       {!isAirportMode && (
-          <div className="fixed bottom-6 right-6 flex flex-col items-center space-y-3 z-40">
-              <button onClick={() => setIsQuickAddModalOpen(true)} className="bg-amber-500 text-white p-3 rounded-full shadow-lg hover:bg-amber-600 transition" aria-label="Agregar viaje manualmente">
-                  <BoltIcon className="h-7 w-7" />
-              </button>
-               <button 
-                onClick={() => setIsModalOpen(true)} 
-                className="bg-indigo-600 text-white p-4 rounded-full shadow-lg transition hover:bg-indigo-700 animate-pulse-glow"
-                aria-label="Importar viaje usando IA"
-               >
-                  <PlusCircleIcon className="h-8 w-8" />
-              </button>
-          </div>
+         <>
+            {isFabMenuOpen && (
+              <div
+                className="fixed inset-0 bg-black/40 z-30"
+                onClick={() => setIsFabMenuOpen(false)}
+                aria-hidden="true"
+              />
+            )}
+            <div className="fixed bottom-6 right-6 flex flex-col items-end space-y-4 z-40">
+                <div
+                    className={`transition-all duration-300 ease-in-out flex flex-col items-end space-y-4 ${
+                    isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+                    }`}
+                >
+                    <div className="flex items-center space-x-3">
+                        <span className="bg-white/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 text-sm font-semibold px-3 py-1.5 rounded-lg shadow-md">
+                            Agregado Rápido
+                        </span>
+                        <button
+                            onClick={handleQuickAddClick}
+                            className="bg-amber-500 text-white p-3 rounded-full shadow-lg hover:bg-amber-600 transition"
+                            aria-label="Agregar viaje manualmente"
+                        >
+                            <BoltIcon className="h-6 w-6" />
+                        </button>
+                    </div>
+
+                    <div className="flex items-center space-x-3">
+                        <span className="bg-white/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 text-sm font-semibold px-3 py-1.5 rounded-lg shadow-md">
+                            Importar con IA
+                        </span>
+                        <button
+                            onClick={handleAiImportClick}
+                            className="bg-indigo-600 text-white p-3 rounded-full shadow-lg hover:bg-indigo-700 transition"
+                            aria-label="Importar viaje usando IA"
+                        >
+                            <MailIcon className="h-6 w-6" />
+                        </button>
+                    </div>
+                </div>
+              
+                <button
+                    onClick={() => setIsFabMenuOpen(!isFabMenuOpen)}
+                    className="bg-indigo-600 text-white p-4 rounded-full shadow-lg transition-all duration-300 hover:bg-indigo-700 transform hover:scale-105 active:scale-95 animate-pulse-glow"
+                    aria-label={isFabMenuOpen ? "Cerrar menú" : "Agregar viaje"}
+                    aria-expanded={isFabMenuOpen}
+                >
+                    <PlusCircleIcon
+                    className={`h-8 w-8 transition-transform duration-300 ${
+                        isFabMenuOpen ? 'rotate-45' : 'rotate-0'
+                    }`}
+                    />
+                </button>
+            </div>
+          </>
       )}
       
       {isInstallBannerVisible && installPromptEvent && (

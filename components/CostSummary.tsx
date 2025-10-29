@@ -25,6 +25,18 @@ const getTripEndDate = (trip: Trip): Date | null => {
     return dateStr ? new Date(dateStr) : null;
 };
 
+const formatPaymentMethod = (paymentMethod: string | null): string => {
+  if (!paymentMethod) return 'N/A';
+
+  if (paymentMethod.includes('6007')) return 'Débito Macro';
+  if (paymentMethod.includes('9417')) return 'Débito Ciudad';
+  if (paymentMethod.includes('5603')) return 'Crédito Macro';
+  if (paymentMethod.includes('8769')) return 'Crédito Ciudad';
+  if (paymentMethod.includes('8059')) return 'Crédito Yoy';
+  
+  return paymentMethod;
+};
+
 const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
@@ -71,6 +83,23 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
             const vueltaCost = trip.returnFlight?.cost || 0;
             return sum + idaCost + vueltaCost;
         }, 0);
+    }, [tripsForSelectedYear]);
+
+    const paymentMethodSummary = useMemo(() => {
+        const costsByMethod: { [key: string]: number } = {};
+        
+        tripsForSelectedYear.forEach(trip => {
+            [trip.departureFlight, trip.returnFlight].forEach(flight => {
+                if (flight && flight.cost && flight.paymentMethod) {
+                    const method = flight.paymentMethod;
+                    costsByMethod[method] = (costsByMethod[method] || 0) + flight.cost;
+                }
+            });
+        });
+
+        return Object.entries(costsByMethod)
+            .map(([method, total]) => ({ method, total }))
+            .sort((a, b) => b.total - a.total);
     }, [tripsForSelectedYear]);
     
     const monthlyCosts = useMemo(() => {
@@ -131,14 +160,39 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
             </div>
         </div>
 
+        {paymentMethodSummary.length > 0 && (
+            <div>
+                <h3 className="text-xl font-bold mb-4">Gastos por Método de Pago</h3>
+                <div className="space-y-3">
+                    {paymentMethodSummary.map(({ method, total }) => {
+                        const widthPercentage = totalCostForYear > 0 ? (total / totalCostForYear) * 100 : 0;
+                        return (
+                            <div key={method}>
+                                <div className="flex justify-between items-center mb-1 text-sm">
+                                    <span className="font-semibold text-slate-600 dark:text-slate-300">{formatPaymentMethod(method)}</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-100">${total.toLocaleString('es-AR')}</span>
+                                </div>
+                                <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-2">
+                                    <div
+                                        className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full transition-all duration-500 ease-out"
+                                        style={{ width: `${widthPercentage}%` }}
+                                    />
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        )}
+
         <div>
             <h3 className="text-xl font-bold mb-4">Desglose Mensual</h3>
             <div className="space-y-3">
                 {months.map((month, index) => {
                     const cost = monthlyCosts[index];
-                    if (cost === 0) return null; // Don't render months with no cost
+                    if (cost === 0 && tripsForSelectedYear.length > 0) return null;
 
-                    const widthPercentage = (cost / maxMonthlyCost) * 100;
+                    const widthPercentage = maxMonthlyCost > 0 ? (cost / maxMonthlyCost) * 100 : 0;
 
                     return (
                         <div key={month} className="flex items-center gap-3 sm:gap-4 text-sm">

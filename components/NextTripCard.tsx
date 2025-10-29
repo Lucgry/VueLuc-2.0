@@ -5,7 +5,8 @@ import { XCircleIcon } from './icons/XCircleIcon';
 
 
 interface NextTripCardProps {
-  trip: Trip;
+  flight: Flight;
+  flightType: 'ida' | 'vuelta';
 }
 
 const calculateCountdown = (targetDate: string) => {
@@ -36,20 +37,8 @@ const formatTime = (dateString: string | null) => {
 };
 
 
-const NextTripCard: React.FC<NextTripCardProps> = ({ trip }) => {
-  const now = new Date();
-  const { departureFlight, returnFlight } = trip;
-  const departureDateTime = departureFlight?.departureDateTime ? new Date(departureFlight.departureDateTime) : null;
-  
-  let upcomingFlight: Flight | null = departureFlight;
-  let upcomingFlightType: 'ida' | 'vuelta' = 'ida';
-
-  if (departureDateTime && departureDateTime < now) {
-    upcomingFlight = returnFlight;
-    upcomingFlightType = 'vuelta';
-  }
-
-  const nextFlightDate = upcomingFlight?.departureDateTime;
+const NextTripCard: React.FC<NextTripCardProps> = ({ flight, flightType }) => {
+  const nextFlightDate = flight.departureDateTime;
   
   if (!nextFlightDate) return null;
 
@@ -63,10 +52,10 @@ const NextTripCard: React.FC<NextTripCardProps> = ({ trip }) => {
     return () => clearInterval(timer);
   }, [nextFlightDate]);
   
-  const destination = upcomingFlight?.arrivalCity || 'Destino';
-  const flightNumber = upcomingFlight?.flightNumber || 'N/A';
-  const airline = upcomingFlight?.airline || null;
-  const flightLabel = upcomingFlightType === 'ida' ? 'Ida' : 'Vuelta';
+  const destination = flight.arrivalCity || 'Destino';
+  const flightNumber = flight.flightNumber || 'N/A';
+  const airline = flight.airline || null;
+  const flightLabel = flightType === 'ida' ? 'Ida' : 'Vuelta';
 
   return (
     <div className="mb-6 p-4 md:p-5 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white shadow-lg border border-indigo-400">

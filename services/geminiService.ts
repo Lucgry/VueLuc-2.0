@@ -1,58 +1,150 @@
-// services/geminiService.ts
-
+import { GoogleGenAI, Type, Part } from "@google/genai";
 import type { Trip, Flight } from '../types';
 
-// ⚠️ URL DE TU CLOUD FUNCTION DESPLEGADA
-const CLOUD_FUNCTION_URL = "https://us-central1-vueluc-app.cloudfunctions.net/parseFlightEmailSecure"; 
+const flightSchema = {
+  type: Type.OBJECT,
+  properties: {
+    flightNumber: { type: Type.STRING, description: "Número de vuelo, por ejemplo 'AR1450'." },
+    airline: { type: Type.STRING, description: "Nombre de la aerolínea, por ejemplo 'Aerolineas Argentinas'." },
+    departureAirportCode: { type: Type.STRING, description: "Código IATA del aeropuerto de salida, ej. 'SLA'." },
+    departureCity: { type: Type.STRING, description: "Ciudad de salida, ej. 'Salta'." },
+    arrivalAirportCode: { type: Type.STRING, description: "Código IATA del aeropuerto de llegada, ej. 'AEP', 'EZE'." },
+    arrivalCity: { type: Type.STRING, description: "Ciudad de llegada, ej. 'Buenos Aires'." },
+    departureDateTime: { type: Type.STRING, description: "Fecha y hora de salida en formato ISO 8601 'YYYY-MM-DDTHH:mm:ss'." },
+    arrivalDateTime: { type: Type.STRING, description: "Fecha y hora de llegada en formato ISO 8601 'YYYY-MM-DDTHH:mm:ss'." },
+    cost: { type: Type.NUMBER, description: "Costo asociado a este vuelo específico. Si el costo es para el viaje completo, asígnalo al primer vuelo." },
+    paymentMethod: { type: Type.STRING, description: "Método de pago para este vuelo, ej. 'Tarjeta de Crédito terminada en 1234'." },
+  },
+  required: ["flightNumber", "departureAirportCode", "arrivalAirportCode", "departureDateTime", "arrivalDateTime"]
+};
 
-/**
- * Envía el email de vuelo y el PDF adjunto a la Cloud Function de Firebase
- * para el parseo SEGURO por Gemini.
- * La Cloud Function (backend) es la que usa la Clave API.
- * * @param emailText El texto del correo a analizar.
- * @param pdfBase64 Contenido opcional del PDF en base64.
- * @returns Una promesa que resuelve con la estructura de viaje extraída.
- */
-export const parseFlightEmail = async (emailText: string, pdfBase64?: string | null): Promise<Omit<Trip, 'id' | 'createdAt'>> => {
-    // 1. Ya no necesitamos la clave aquí, así que la removemos del argumento, si estaba.
-    // 2. Comprobamos la existencia del email.
-    if (!emailText) {
-        throw new Error("El texto del email no puede estar vacío.");
+
+const tripSchema = {
+  type: Type.OBJECT,
+  properties: {
+    flights: {
+      type: Type.ARRAY,
+      description: "Una lista de todos los vuelos encontrados en el email. Si es un solo tramo, esta lista tendrá un solo elemento. Si es ida y vuelta, tendrá dos.",
+      items: flightSchema,
+    },
+    bookingReference: { type: Type.STRING, description: "Código de reserva o localizador." },
+  },
+  required: ["bookingReference", "flights"]
+};
+
+export const parseFlightEmail = async (emailText: string, apiKey: string, pdfBase64?: string | null): Promise<Omit<Trip, 'id' | 'createdAt'>> => {
+  const pdfInstruction = pdfBase64 
+    ? `
+    DATOS DEL PDF ADJUNTO:
+    - Se ha adjuntado un archivo PDF. Este archivo contiene la información de facturación y el costo total del viaje.
+    - DEBES priorizar el valor encontrado en el PDF como el 'cost' y asignarlo al primer vuelo de la lista.
+    `
+    : '';
+    
+  const instructions = `
+    Eres un asistente de extracción de datos de vuelos. Tu única función es convertir los detalles de un email de vuelo a formato JSON según el esquema provisto.
+    ${pdfInstruction}
+
+    REGLAS ESTRICTAS E INQUEBRABLES:
+    1.  TAREA PRINCIPAL: Extrae CADA VUELO que encuentres en el email y colócalo como un objeto dentro de la lista 'flights' del JSON.
+    2.  REGLA DE ORO: NO INVENTES VUELOS. Si el email contiene solo UN vuelo, la lista 'flights' DEBE contener solo UN objeto. Si el email contiene dos vuelos (ida y vuelta), la lista 'flights' debe contener DOS objetos.
+    3.  COSTO: El costo total del viaje debe ser asignado al campo 'cost' del PRIMER vuelo en la lista 'flights'.
+
+    FORMATO DE FECHA:
+    - Debes convertir SIEMPRE las fechas y horas al formato estricto ISO 8601: 'YYYY-MM-DDTHH:mm:ss'.
+    - Si el año no está especificado (ej. '21 oct'), deduce el año futuro más próximo. Si la fecha actual es Junio 2025 y la fecha del vuelo es '21 oct', el año es 2025. Si la fecha actual es Diciembre 2025 y la fecha del vuelo es '21 oct', el año correcto es 2026.
+
+    Extrae también el 'bookingReference'.
+  `;
+
+  try {
+    if (!apiKey) {
+      throw new Error("La clave de API no está configurada. No se puede comunicar con el servicio de IA.");
+    }
+    const ai = new GoogleGenAI({ apiKey });
+
+    const parts: Part[] = [
+      { text: instructions },
+      { text: `Texto del correo a analizar:\n---\n${emailText}\n---` }
+    ];
+    
+    if (pdfBase64) {
+      parts.push({
+        inlineData: {
+          mimeType: 'application/pdf',
+          data: pdfBase64,
+        },
+      });
     }
 
-    try {
-        // Realiza una petición POST a la Cloud Function de Firebase
-        const response = await fetch(CLOUD_FUNCTION_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            // Envía todos los datos necesarios para que la Cloud Function haga el parseo
-            body: JSON.stringify({
-                emailText: emailText,
-                pdfBase64: pdfBase64,
-            }),
-        });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: { parts },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: tripSchema,
+      },
+    });
 
-        // La Cloud Function debería retornar un error 400/500 si algo falla
-        if (!response.ok) {
-            const errorBody = await response.json();
-            throw new Error(errorBody.error || `Error en el servidor de IA (HTTP ${response.status}).`);
+    const parsedText = response.text.trim();
+    
+    type GeminiResponse = {
+      flights: Flight[];
+      bookingReference: string | null;
+    };
+
+    const aiResponse = JSON.parse(parsedText) as GeminiResponse;
+    
+    const finalTrip: Omit<Trip, 'id' | 'createdAt'> = {
+      departureFlight: null,
+      returnFlight: null,
+      bookingReference: aiResponse.bookingReference,
+    };
+
+    const BUENOS_AIRES_CODES = ['AEP', 'EZE'];
+    const SALTA_CODE = 'SLA';
+
+    const isFlightValid = (flight: any): flight is Flight => {
+      return flight &&
+             typeof flight.departureAirportCode === 'string' &&
+             typeof flight.departureDateTime === 'string' &&
+             !isNaN(new Date(flight.departureDateTime).getTime());
+    };
+
+    for (const flight of aiResponse.flights) {
+      if (!isFlightValid(flight)) {
+        continue;
+      }
+
+      const departureCode = flight.departureAirportCode.toUpperCase().trim();
+      
+      if (departureCode === SALTA_CODE) {
+        if (!finalTrip.departureFlight) {
+          finalTrip.departureFlight = flight;
         }
-
-        // La respuesta de la Cloud Function debe ser la estructura final de la Trip
-        const finalTrip = await response.json();
-        return finalTrip as Omit<Trip, 'id' | 'createdAt'>;
-
-    } catch (error) {
-        console.error("Error al conectar con el backend seguro de Gemini:", error);
-        const message = error instanceof Error ? error.message : "Un error desconocido ocurrió durante el procesamiento.";
-        
-        // Retornamos errores más específicos al usuario
-        if (message.includes("API Key") || message.includes("servidor de IA")) {
-            throw new Error("Error de configuración en el backend. La clave secreta de Gemini podría no ser válida.");
+      } else if (BUENOS_AIRES_CODES.includes(departureCode)) {
+        if (!finalTrip.returnFlight) {
+          finalTrip.returnFlight = flight;
         }
-        
-        throw new Error(`Error al procesar el email: ${message}`);
+      }
     }
+    
+    return finalTrip;
+
+  } catch (error) {
+    console.error("Error parsing flight email with Gemini:", error);
+    const message = error instanceof Error ? error.message : "An unknown error occurred during parsing.";
+
+    if (message.includes('API key not valid') || message.includes('API key is invalid') || message.includes('Requested entity was not found')) {
+        throw new Error("La API Key seleccionada no es válida o no tiene permisos. Por favor, configúrala de nuevo.");
+    }
+    if (message.includes("La clave de API no está configurada")) {
+        throw new Error("Error de configuración: La clave de API no está configurada. No se puede comunicar con el servicio de IA.");
+    }
+    if (message.includes('JSON')) {
+        throw new Error("La IA no pudo procesar el email. Asegúrate de que el texto copiado sea claro y contenga los detalles del vuelo.");
+    }
+
+    throw new Error(`Error al procesar el email: ${message}`);
+  }
 };
