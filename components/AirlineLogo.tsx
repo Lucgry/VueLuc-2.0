@@ -2,22 +2,43 @@ import React from 'react';
 import { AerolineasLogo } from './icons/AerolineasLogo';
 import { JetSmartLogo } from './icons/JetSmartLogo';
 
-export const AirlineLogo: React.FC<{ airline: string | null; size?: 'xs' | 'sm' | 'md' }> = ({ airline, size = 'md' }) => {
+interface AirlineLogoProps {
+  airline: string | null;
+  size?: 'xs' | 'sm' | 'md';
+  className?: string;
+  type?: 'full' | 'isotipo';
+}
+
+
+export const AirlineLogo: React.FC<AirlineLogoProps> = ({ airline, size = 'md', className = '', type = 'full' }) => {
     if (!airline) return null;
     
-    const sizeClasses = {
-        xs: 'h-6 w-6', // For NextTripCard
-        sm: 'h-8 w-8', // For TripCard collapsed view
-        md: 'h-8 w-8'  // For TripCard expanded view
+    // Further reduced sizes for a more compact look
+    const heightClasses = {
+        xs: 'h-4', // 16px
+        sm: 'h-5', // 20px
+        md: 'h-5'  // 20px
     };
 
     const lowerCaseAirline = airline.toLowerCase();
     
     if (lowerCaseAirline.includes('aerolineas')) {
-        return <AerolineasLogo className={`${sizeClasses[size]} text-[#00A1DE]`} />;
+        const combinedClassName = `${heightClasses[size]} w-auto ${className}`;
+        // AerolineasLogo now contains the 'condor' isotipo, so it's used for all cases.
+        return <AerolineasLogo className={`${combinedClassName} text-[#00A1DE]`} />;
     }
+    
     if (lowerCaseAirline.includes('jetsmart') || lowerCaseAirline.includes('jet smart')) {
-        return <JetSmartLogo className={sizeClasses[size]} />;
+        // Further reduced sizes for visual consistency with Aerolineas
+        const sizeClasses = {
+            xs: 'h-4 w-4', // 16px
+            sm: 'h-5 w-5', // 20px
+            md: 'h-5 w-5'  // 20px
+        };
+        const combinedClassName = `${sizeClasses[size]} ${className}`;
+        return <JetSmartLogo className={combinedClassName} />;
     }
-    return <span className="text-sm font-semibold">{airline}</span>;
+
+    // Fallback para otras aerolíneas
+    return <span className={`text-sm font-semibold ${className}`}>{airline}</span>;
 };

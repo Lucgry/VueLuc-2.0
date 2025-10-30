@@ -69,7 +69,6 @@ const FlightInfo: React.FC<{ flight: Flight; type: 'Ida' | 'Vuelta' }> = ({ flig
           <TicketIcon className="h-5 w-5" />
           <span>{type}</span>
         </div>
-        <AirlineLogo airline={flight.airline} />
       </div>
       
       <div className="text-center text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2 capitalize">
@@ -81,9 +80,14 @@ const FlightInfo: React.FC<{ flight: Flight; type: 'Ida' | 'Vuelta' }> = ({ flig
           <p className="text-2xl font-bold">{formatTime(flight.departureDateTime)}</p>
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">{flight.departureAirportCode}</p>
         </div>
-        <div className="flex-1 text-center text-slate-500">
-            <div className="border-t-2 border-dashed border-slate-300 dark:border-slate-600"></div>
-            <p className="text-xs -mt-2 bg-white dark:bg-slate-800 px-1 inline-block">{flight.flightNumber}</p>
+        <div className="flex-1 flex flex-col items-center justify-center">
+             <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-slate-300 dark:via-slate-600 to-transparent"></div>
+             <div className="text-center -mt-4">
+                <div className="p-1 rounded-full bg-slate-200 dark:bg-slate-800 shadow-neumo-light-in dark:shadow-neumo-dark-in inline-block">
+                    <AirlineLogo airline={flight.airline} size="sm" type="isotipo" />
+                </div>
+                {flight.flightNumber && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{flight.flightNumber}</p>}
+             </div>
         </div>
         <div className="text-center">
           <p className="text-2xl font-bold">{formatTime(flight.arrivalDateTime)}</p>
@@ -205,7 +209,20 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
     }
     const status = getStatus();
     
-    const primaryAirline = trip.departureFlight?.airline || trip.returnFlight?.airline;
+    const idaAirline = trip.departureFlight?.airline;
+    const vueltaAirline = trip.returnFlight?.airline;
+    
+    // Normaliza el nombre de la aerolínea para una comparación robusta.
+    const getNormalizedAirline = (name: string | null | undefined): string => {
+        if (!name) return '';
+        const lowerName = name.toLowerCase();
+        if (lowerName.includes('aerolineas')) return 'aerolineas';
+        if (lowerName.includes('jetsmart')) return 'jetsmart';
+        return lowerName.trim();
+    };
+
+    const areAirlinesDifferent = idaAirline && vueltaAirline && getNormalizedAirline(idaAirline) !== getNormalizedAirline(vueltaAirline);
+
 
     let tripTypeText: string;
     if (idaFlight && vueltaFlight) {
@@ -291,13 +308,14 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
                 }}
             />
         )}
-        <div className={`relative bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 transition-all duration-300 ${isPast ? 'opacity-60 hover:opacity-100' : ''} ${isNext ? 'ring-2 ring-indigo-500' : ''}`}>
-            <div 
-                className="flex justify-between items-center p-4 cursor-pointer"
+        <div className={`relative bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out transition-all duration-300 ${isPast ? 'opacity-60 hover:opacity-100' : ''} ${isNext ? 'ring-2 ring-indigo-500' : ''}`}>
+             <div 
+                className="p-4 cursor-pointer"
                 onClick={() => setIsExpanded(!isExpanded)}
             >
-                 <div className="flex items-center space-x-4">
-                     <div>
+                <div className="flex flex-col space-y-1.5">
+                    {/* --- Row 1: Date & Time --- */}
+                    <div className="flex justify-between items-start">
                         <div className="font-bold text-lg text-slate-800 dark:text-slate-200 capitalize">
                            {idaFlight && vueltaFlight ? (
                                 <span>{formatCompactDate(idaDate)} &rarr; {formatCompactDate(vueltaDate)}</span>
@@ -305,30 +323,41 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
                                 <span>{formatDate(idaDate || vueltaDate)}</span>
                            )}
                         </div>
-                        {status && (
-                             <div className={`flex items-center space-x-1.5 text-xs font-semibold mt-1 ${status.color}`}>
-                                <status.Icon className="h-4 w-4" />
-                                <span>{status.text}</span>
-                            </div>
-                        )}
-                    </div>
-                 </div>
-                <div className="flex items-center space-x-3 md:space-x-4">
-                    <AirlineLogo airline={primaryAirline} size="sm" />
-                    <div className="text-right">
                         <p className="text-lg font-bold text-slate-800 dark:text-slate-200">{formatTime(tripDate)}</p>
-                        <div className="flex items-center justify-end space-x-2 mt-0.5">
+                    </div>
+
+                    {/* --- Row 2: Logos & Details --- */}
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-2">
+                             {areAirlinesDifferent ? (
+                                <>
+                                    <AirlineLogo airline={idaAirline} size="sm" type="full" />
+                                    <AirlineLogo airline={vueltaAirline} size="sm" type="full"/>
+                                </>
+                            ) : (
+                                <AirlineLogo airline={idaAirline || vueltaAirline} size="sm" type="full" />
+                            )}
+                        </div>
+                        <div className="flex items-center justify-end space-x-2">
                             <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{tripTypeText}</p>
                             {trip.bookingReference && <p className="font-mono bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-md text-xs font-semibold">{trip.bookingReference}</p>}
+                            <ChevronDownIcon className={`h-6 w-6 text-slate-500 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
                         </div>
                     </div>
-                    <ChevronDownIcon className={`h-6 w-6 text-slate-500 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+
+                    {/* --- Row 3: Status --- */}
+                    {status && (
+                         <div className={`flex items-center space-x-1.5 text-xs font-semibold ${status.color}`}>
+                            <status.Icon className="h-4 w-4" />
+                            <span>{status.text}</span>
+                        </div>
+                    )}
                 </div>
             </div>
 
             <div className={`transition-[max-height] duration-500 ease-in-out overflow-hidden ${isExpanded ? 'max-h-[600px]' : 'max-h-0'}`}>
                 <div className="px-4 pb-4">
-                    <div className="bg-slate-100 dark:bg-slate-900 rounded-lg p-4">
+                    <div className="rounded-lg p-4 shadow-neumo-light-in dark:shadow-neumo-dark-in">
                          <div className="flex flex-col md:flex-row md:space-x-6 space-y-4 md:space-y-0">
                             {idaFlight && (
                                 <div className="flex-1 space-y-3">
@@ -344,14 +373,14 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
                                             <div className="flex space-x-2">
                                                 <button 
                                                     onClick={(e) => handleViewBoardingPass(e, 'ida')} 
-                                                    className="flex-grow text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-md bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/50 dark:text-green-300 dark:hover:bg-green-900 transition"
+                                                    className="flex-grow text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-green-700 dark:text-green-300 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200"
                                                     disabled={deletingStatus.ida === 'deleting'}
                                                 >
                                                     <DocumentTextIcon className="h-5 w-5" /><span>Ver Tarjeta</span>
                                                 </button>
                                                 <button 
                                                     onClick={(e) => handleDeleteBoardingPass(e, 'ida')} 
-                                                    className="flex-shrink-0 p-2 rounded-md bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-400 dark:hover:bg-red-900 transition flex items-center justify-center w-[40px]" 
+                                                    className="flex-shrink-0 p-2 rounded-lg text-red-600 dark:text-red-400 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200 flex items-center justify-center w-[40px]" 
                                                     aria-label="Eliminar tarjeta de embarque de ida"
                                                     disabled={deletingStatus.ida === 'deleting'}
                                                 >
@@ -360,7 +389,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
                                             </div>
                                         )
                                     ) : (
-                                        <button onClick={(e) => handleAddBoardingPassClick(e, 'ida')} className="w-full text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-md bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 transition">
+                                        <button onClick={(e) => handleAddBoardingPassClick(e, 'ida')} className="w-full text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-lg shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200">
                                             <DocumentPlusIcon className="h-5 w-5" /><span>Agregar Tarjeta</span>
                                         </button>
                                     )}
@@ -385,14 +414,14 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
                                             <div className="flex space-x-2">
                                                 <button 
                                                     onClick={(e) => handleViewBoardingPass(e, 'vuelta')} 
-                                                    className="flex-grow text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-md bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/50 dark:text-green-300 dark:hover:bg-green-900 transition"
+                                                    className="flex-grow text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-green-700 dark:text-green-300 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200"
                                                     disabled={deletingStatus.vuelta === 'deleting'}
                                                 >
                                                     <DocumentTextIcon className="h-5 w-5" /><span>Ver Tarjeta</span>
                                                 </button>
                                                 <button 
                                                     onClick={(e) => handleDeleteBoardingPass(e, 'vuelta')} 
-                                                    className="flex-shrink-0 p-2 rounded-md bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-400 dark:hover:bg-red-900 transition flex items-center justify-center w-[40px]" 
+                                                    className="flex-shrink-0 p-2 rounded-lg text-red-600 dark:text-red-400 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200 flex items-center justify-center w-[40px]" 
                                                     aria-label="Eliminar tarjeta de embarque de vuelta"
                                                     disabled={deletingStatus.vuelta === 'deleting'}
                                                 >
@@ -401,7 +430,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
                                             </div>
                                         )
                                     ) : (
-                                        <button onClick={(e) => handleAddBoardingPassClick(e, 'vuelta')} className="w-full text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-md bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 transition">
+                                        <button onClick={(e) => handleAddBoardingPassClick(e, 'vuelta')} className="w-full text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-lg shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200">
                                             <DocumentPlusIcon className="h-5 w-5" /><span>Agregar Tarjeta</span>
                                         </button>
                                     )}
@@ -422,17 +451,17 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
                         <div className="flex items-center space-x-2">
                            {tripDeletionState === 'confirming' ? (
                                 <div className="flex items-center space-x-2 bg-red-100 dark:bg-red-900/50 p-2 rounded-lg w-full justify-center">
-                                    <span className="text-sm font-semibold text-red-800 dark:text-red-200">¿Eliminar viaje?</span>
+                                    <span className="text-sm font-semibold text-red-800 dark:text-red-200">¿Eliminar?</span>
                                     <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-sm font-bold px-4 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition">Sí</button>
                                     <button onClick={(e) => { e.stopPropagation(); setTripDeletionState('idle'); }} className="text-sm font-medium px-4 py-1.5 rounded-md bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500 transition">No</button>
                                 </div>
                            ) : (
                             <>
-                             <button onClick={(e) => handleShare(e)} className="text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200/50 hover:bg-indigo-100 dark:bg-slate-700/50 dark:hover:bg-indigo-900/40">
+                             <button onClick={(e) => handleShare(e)} className="text-slate-500 dark:text-slate-400 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in">
                                  <ShareIcon className="h-4 w-4" />
                                  <span>{copied ? '¡Copiado!' : 'Compartir'}</span>
                             </button>
-                            <button onClick={(e) => { e.stopPropagation(); setTripDeletionState('confirming'); }} className="text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200/50 hover:bg-red-100 dark:bg-slate-700/50 dark:hover:bg-red-900/40">
+                            <button onClick={(e) => { e.stopPropagation(); setTripDeletionState('confirming'); }} className="text-slate-500 dark:text-slate-400 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in">
                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                  <span>Eliminar</span>
                             </button>

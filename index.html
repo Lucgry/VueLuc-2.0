@@ -9,6 +9,19 @@
     <script>
       tailwind.config = {
         darkMode: 'class',
+        theme: {
+          extend: {
+            boxShadow: {
+              // Neumorfismo para modo claro
+              'neumo-light-out': '5px 5px 10px #b8b9be, -5px -5px 10px #ffffff',
+              'neumo-light-in': 'inset 5px 5px 10px #b8b9be, inset -5px -5px 10px #ffffff',
+              
+              // Neumorfismo para modo oscuro
+              'neumo-dark-out': '5px 5px 10px #1a202c, -5px -5px 10px #2d3748',
+              'neumo-dark-in': 'inset 5px 5px 10px #1a202c, inset -5px -5px 10px #2d3748',
+            },
+          },
+        },
       }
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,17 +36,7 @@
       body {
         font-family: 'Inter', sans-serif;
       }
-      @keyframes pulse-glow {
-        0%, 100% {
-          box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
-        }
-        50% {
-          box-shadow: 0 0 20px 10px rgba(99, 102, 241, 0);
-        }
-      }
-      .animate-pulse-glow {
-        animation: pulse-glow 2.5s infinite;
-      }
+      /* Se elimina la animación de pulso anterior para reemplazarla con el nuevo estilo neumórfico */
     </style>
   <script type="importmap">
 {
@@ -51,7 +54,7 @@
 }
 </script>
 </head>
-  <body class="bg-gradient-to-br from-sky-100 to-violet-100 dark:from-slate-900 dark:to-purple-900 text-slate-800 dark:text-slate-200 min-h-screen">
+  <body class="bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 text-slate-800 dark:text-slate-200 min-h-screen">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

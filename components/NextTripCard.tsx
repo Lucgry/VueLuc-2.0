@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { Trip, Flight } from '../types';
+import type { Flight } from '../types';
 import { AirlineLogo } from './AirlineLogo';
 import { XCircleIcon } from './icons/XCircleIcon';
 
@@ -36,65 +36,70 @@ const formatTime = (dateString: string | null) => {
   });
 };
 
+const CountdownUnit: React.FC<{ value: number; label: string }> = ({ value, label }) => (
+    <div className="flex flex-col items-center w-16">
+        <div className="w-full text-center p-2 rounded-lg shadow-neumo-light-in dark:shadow-neumo-dark-in">
+            <span className="text-3xl font-bold text-slate-800 dark:text-slate-100 tracking-tighter">
+                {formatTimeValue(value)}
+            </span>
+        </div>
+        <span className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">{label}</span>
+    </div>
+);
+
 
 const NextTripCard: React.FC<NextTripCardProps> = ({ flight, flightType }) => {
   const nextFlightDate = flight.departureDateTime;
   
-  if (!nextFlightDate) return null;
+  const [countdown, setCountdown] = useState(calculateCountdown(nextFlightDate || ''));
+  const [isVisible, setIsVisible] = useState(true);
 
-  const [countdown, setCountdown] = useState(calculateCountdown(nextFlightDate));
-  
   useEffect(() => {
+    if (!nextFlightDate || countdown.isPast) return;
+
     const timer = setInterval(() => {
       setCountdown(calculateCountdown(nextFlightDate));
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [nextFlightDate]);
+  }, [nextFlightDate, countdown.isPast]);
   
-  const destination = flight.arrivalCity || 'Destino';
-  const flightNumber = flight.flightNumber || 'N/A';
-  const airline = flight.airline || null;
-  const flightLabel = flightType === 'ida' ? 'Ida' : 'Vuelta';
+  if (!isVisible || !nextFlightDate || countdown.isPast) {
+      return null;
+  }
 
   return (
-    <div className="mb-6 p-4 md:p-5 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white shadow-lg border border-indigo-400">
-      <div className="flex justify-between items-start">
-        <div>
-          <h2 className="text-lg font-bold">Próximo Viaje ({flightLabel})</h2>
-          <p className="text-indigo-200 font-semibold">{`✈️ Vuelo a ${destination}`}</p>
+    <div className="relative bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out p-4 mb-6">
+        <button onClick={() => setIsVisible(false)} className="absolute top-2 right-2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors z-10">
+            <XCircleIcon className="w-6 h-6" />
+        </button>
+
+        <h3 className="text-center text-sm font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-3">
+            Próximo Vuelo en:
+        </h3>
+
+        <div className="flex justify-center space-x-2 sm:space-x-4">
+            <CountdownUnit value={countdown.days} label="Días" />
+            <CountdownUnit value={countdown.hours} label="Horas" />
+            <CountdownUnit value={countdown.minutes} label="Min." />
+            <CountdownUnit value={countdown.seconds} label="Seg." />
         </div>
-        <div className="bg-white/20 p-2 rounded-full flex items-center justify-center">
-            <AirlineLogo airline={airline} size="xs" />
+
+        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center text-sm">
+            <div className="flex items-center space-x-3">
+                <AirlineLogo airline={flight.airline} size="sm" type="isotipo" />
+                <div>
+                    <p className="font-bold text-slate-800 dark:text-slate-200">{flight.flightNumber}</p>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 capitalize">{flightType === 'ida' ? 'Ida' : 'Vuelta'}</p>
+                </div>
+            </div>
+            <div className="text-right">
+                <p className="font-bold text-slate-800 dark:text-slate-200">
+                    {flight.departureAirportCode} &rarr; {flight.arrivalAirportCode}
+                </p>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{formatTime(flight.departureDateTime)} hs</p>
+            </div>
         </div>
-      </div>
-      
-      {countdown.isPast ? (
-        <div className="text-center my-4 py-4">
-             <span className="text-4xl font-extrabold tracking-tighter">¡En Vuelo!</span>
-        </div>
-      ) : (
-        <div className="flex justify-center items-end space-x-2 my-4 text-center">
-          <div>
-            <span className="text-5xl font-extrabold tracking-tighter">{formatTimeValue(countdown.days)}</span>
-            <span className="text-sm font-medium text-indigo-200 block -mt-1">días</span>
-          </div>
-           <span className="text-4xl font-bold pb-1">:</span>
-          <div>
-            <span className="text-5xl font-extrabold tracking-tighter">{formatTimeValue(countdown.hours)}</span>
-            <span className="text-sm font-medium text-indigo-200 block -mt-1">hs</span>
-          </div>
-           <span className="text-4xl font-bold pb-1">:</span>
-          <div>
-            <span className="text-5xl font-extrabold tracking-tighter">{formatTimeValue(countdown.minutes)}</span>
-            <span className="text-sm font-medium text-indigo-200 block -mt-1">min</span>
-          </div>
-        </div>
-      )}
-      
-      <div className="text-center font-semibold text-indigo-100 bg-black/20 px-3 py-1.5 rounded-lg">
-        {`Sale a las ${formatTime(nextFlightDate)} hs - Vuelo ${flightNumber}`}
-      </div>
     </div>
   );
 };

@@ -63,11 +63,11 @@ const EmailImporter: React.FC<EmailImporterProps> = ({ apiKey, onClose, onAddTri
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex justify-center items-center z-50 p-4" onClick={onClose}>
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl p-6 md:p-8 w-full max-w-2xl transform transition-all" onClick={e => e.stopPropagation()}>
+        <div className="bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out p-6 md:p-8 w-full max-w-2xl transform transition-all" onClick={e => e.stopPropagation()}>
         
         <div className="flex justify-between items-start mb-4">
             <div className="flex items-start sm:items-center space-x-4">
-                <div className="bg-indigo-100 dark:bg-indigo-500/20 p-3 rounded-full mt-1 sm:mt-0">
+                <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-full shadow-neumo-light-out dark:shadow-neumo-dark-out mt-1 sm:mt-0">
                     <MailIcon className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                 </div>
                 <div>
@@ -78,7 +78,7 @@ const EmailImporter: React.FC<EmailImporterProps> = ({ apiKey, onClose, onAddTri
             <button onClick={onClose} className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 text-3xl leading-none">&times;</button>
         </div>
         
-        <div className="space-y-2 text-slate-700 dark:text-slate-300 text-sm mb-4 bg-slate-100 dark:bg-slate-700/50 p-3 rounded-lg">
+        <div className="space-y-2 text-slate-700 dark:text-slate-300 text-sm mb-4 p-3 rounded-lg shadow-neumo-light-in dark:shadow-neumo-dark-in">
             <p><b>Tip:</b> Para asegurar una importación perfecta, reenvía el email de la aerolínea a tu propia cuenta, luego copia y pega el contenido de ese email reenviado.</p>
         </div>
 
@@ -86,12 +86,12 @@ const EmailImporter: React.FC<EmailImporterProps> = ({ apiKey, onClose, onAddTri
             value={emailText}
             onChange={(e) => setEmailText(e.target.value)}
             placeholder="Pega aquí el contenido completo del email..."
-            className="w-full h-48 p-3 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+            className="w-full h-48 p-3 border-none rounded-md bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 transition shadow-neumo-light-in dark:shadow-neumo-dark-in"
             disabled={isLoading}
         />
         
         <div className="mt-4">
-            <label htmlFor="pdf-upload-main" className="cursor-pointer text-sm font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/50 hover:bg-indigo-200 dark:hover:bg-indigo-900 px-3 py-2 rounded-md transition">
+            <label htmlFor="pdf-upload-main" className="cursor-pointer inline-block text-sm font-medium text-indigo-600 dark:text-indigo-400 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in px-3 py-2 rounded-md transition-shadow duration-200">
             <span>{pdfFile ? 'Cambiar PDF de Costos' : 'Adjuntar PDF de Costos'}</span>
             <input id="pdf-upload-main" type="file" className="hidden" accept="application/pdf" onChange={handleFileChange} disabled={isLoading} />
             </label>
@@ -108,14 +108,14 @@ const EmailImporter: React.FC<EmailImporterProps> = ({ apiKey, onClose, onAddTri
         <div className="mt-6 flex flex-col sm:flex-row justify-end items-center space-y-2 sm:space-y-0 sm:space-x-4">
             <button
             onClick={onClose}
-            className="w-full sm:w-auto px-4 py-2 text-slate-800 dark:text-slate-200 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+            className="w-full sm:w-auto px-4 py-2 text-slate-800 dark:text-slate-200 rounded-md transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in"
             disabled={isLoading}
             >
             Cancelar
             </button>
             <button
             onClick={handleSubmit}
-            className="w-full sm:w-auto px-6 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed transition flex items-center justify-center shadow-lg"
+            className="w-full sm:w-auto px-6 py-2 bg-gradient-to-br from-indigo-500 to-indigo-600 text-white font-semibold rounded-md disabled:opacity-60 disabled:cursor-not-allowed transition-shadow duration-200 flex items-center justify-center shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in"
             disabled={isLoading || !emailText}
             >
             {isLoading ? <Spinner /> : 'Procesar Viaje'}

@@ -9,7 +9,7 @@ interface CostSummaryProps {
 }
 
 const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string; gradient: string }> = ({ icon, label, value, gradient }) => (
-    <div className="flex-1 p-4 rounded-lg flex items-center space-x-4 bg-white/50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
+    <div className="flex-1 p-4 rounded-xl flex items-center space-x-4 bg-slate-100 dark:bg-slate-800 shadow-neumo-light-out dark:shadow-neumo-dark-out">
         <div className={`p-3 rounded-full ${gradient} text-white shadow-lg`}>
            {icon}
         </div>
@@ -129,7 +129,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
 
     if (trips.length === 0) {
         return (
-            <div className="text-center py-20 px-6 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-lg shadow-md border border-slate-200/80 dark:border-slate-700/80">
+            <div className="text-center py-20 px-6 bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out">
                 <CalculatorIcon className="mx-auto h-16 w-16 text-slate-500 dark:text-slate-400" />
                 <h2 className="mt-4 text-2xl font-bold text-slate-800 dark:text-white">Sin Datos de Costos</h2>
                 <p className="mt-2 text-slate-600 dark:text-slate-400">Agrega viajes para comenzar a analizar tus gastos.</p>
@@ -138,14 +138,14 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     }
   
     return (
-    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 p-4 md:p-6 space-y-8">
+    <div className="bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out p-4 md:p-6 space-y-8">
         <div>
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold">Resumen Anual</h3>
                 <select 
                     value={selectedYear} 
                     onChange={e => setSelectedYear(parseInt(e.target.value))}
-                    className="bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md px-3 py-1.5 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-1.5 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-neumo-light-out dark:shadow-neumo-dark-out appearance-none"
                 >
                     {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
                 </select>
@@ -178,7 +178,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                                     <span className="font-semibold text-slate-600 dark:text-slate-300">{method}</span>
                                     <span className="font-bold text-slate-800 dark:text-slate-100">${total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
-                                <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-2">
+                                <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-2 shadow-neumo-light-in dark:shadow-neumo-dark-in">
                                     <div
                                         className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full transition-all duration-500 ease-out"
                                         style={{ width: `${widthPercentage}%` }}
@@ -203,7 +203,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                     return (
                         <div key={month} className="flex items-center gap-3 sm:gap-4 text-sm">
                             <span className="font-semibold text-slate-600 dark:text-slate-400 w-10 text-right">{month}</span>
-                            <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-3">
+                            <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-3 shadow-neumo-light-in dark:shadow-neumo-dark-in">
                                 <div
                                     className="bg-gradient-to-r from-indigo-500 to-teal-500 h-3 rounded-full transition-all duration-500 ease-out"
                                     style={{ width: `${widthPercentage}%` }}

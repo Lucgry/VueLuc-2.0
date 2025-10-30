@@ -37,15 +37,26 @@ const emptyMessages = {
     }
 };
 
+const getTripStartDate = (trip: Trip): string | null => {
+    return trip.departureFlight?.departureDateTime || trip.returnFlight?.departureDateTime || null;
+}
 const getTripEndDate = (trip: Trip): string | null => {
     return trip.returnFlight?.arrivalDateTime || trip.departureFlight?.arrivalDateTime || null;
 }
+
+const YearSeparator: React.FC<{ year: number }> = ({ year }) => (
+  <div className="flex items-center space-x-4 my-6" aria-hidden="true">
+    <div className="flex-1 h-px bg-slate-300 dark:bg-slate-600 shadow-neumo-light-in dark:shadow-neumo-dark-in"></div>
+    <span className="font-bold text-lg text-slate-500 dark:text-slate-400">{year}</span>
+    <div className="flex-1 h-px bg-slate-300 dark:bg-slate-600 shadow-neumo-light-in dark:shadow-neumo-dark-in"></div>
+  </div>
+);
 
 const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, nextTripId }) => {
   if (trips.length === 0) {
     const { title, message, icon } = emptyMessages[listFilter] || emptyMessages.future;
     return (
-      <div className="text-center py-20 px-6 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-lg shadow-md border border-slate-200/80 dark:border-slate-700/80">
+      <div className="text-center py-20 px-6 bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out">
         {icon}
         <h2 className="mt-4 text-2xl font-bold text-slate-800 dark:text-white">{title}</h2>
         <p className="mt-2 text-slate-600 dark:text-slate-400">{message}</p>
@@ -54,21 +65,34 @@ const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, ne
   }
 
   const now = new Date();
+  let lastYear: number | null = null;
 
   return (
     <div className="space-y-6">
       {trips.map(trip => {
+        const tripStartDate = getTripStartDate(trip);
+        const currentYear = tripStartDate ? new Date(tripStartDate).getFullYear() : null;
+        let yearSeparator = null;
+
+        if (currentYear && currentYear !== lastYear) {
+          yearSeparator = <YearSeparator year={currentYear} />;
+          lastYear = currentYear;
+        }
+
         const tripEndDate = getTripEndDate(trip);
         const isPast = tripEndDate ? new Date(tripEndDate) < now : false;
         const isNext = trip.id === nextTripId;
+
         return (
-          <TripCard 
-            key={trip.id} 
-            trip={trip} 
-            onDelete={() => onDeleteTrip(trip.id)}
-            isPast={isPast}
-            isNext={isNext}
-          />
+          <React.Fragment key={trip.id}>
+            {yearSeparator}
+            <TripCard 
+              trip={trip} 
+              onDelete={() => onDeleteTrip(trip.id)}
+              isPast={isPast}
+              isNext={isNext}
+            />
+          </React.Fragment>
         );
       })}
     </div>

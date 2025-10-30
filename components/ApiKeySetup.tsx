@@ -18,8 +18,8 @@ const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onKeySave }) => {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">
-      <div className="max-w-xl w-full bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm p-8 rounded-lg shadow-md border border-slate-200/80 dark:border-slate-700/80">
-        <div className="mx-auto mb-4 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 w-16 h-16 rounded-full flex items-center justify-center">
+      <div className="max-w-xl w-full bg-slate-100 dark:bg-slate-800 p-8 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out">
+        <div className="mx-auto mb-4 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 w-16 h-16 rounded-full flex items-center justify-center shadow-neumo-light-out dark:shadow-neumo-dark-out">
             <BoltIcon className="w-8 h-8" />
         </div>
         <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Conecta con la IA de Google</h1>
@@ -27,7 +27,7 @@ const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onKeySave }) => {
           Para usar las funciones inteligentes, necesitas una API Key gratuita de Google AI Studio.
         </p>
         
-        <div className="mt-6 text-left bg-slate-100 dark:bg-slate-700/50 p-4 rounded-lg">
+        <div className="mt-6 text-left p-4 rounded-lg shadow-neumo-light-in dark:shadow-neumo-dark-in">
             <h3 className="font-semibold text-slate-800 dark:text-white mb-3 text-center">Sigue estos 5 pasos:</h3>
             <ol className="space-y-3">
                 <li className="flex items-start space-x-3">
@@ -40,7 +40,7 @@ const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onKeySave }) => {
                           href="https://aistudio.google.com/app/projects"
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="mt-2 inline-block px-4 py-2 bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-100 dark:hover:bg-slate-600 transition shadow-sm text-sm"
+                          className="mt-2 inline-block px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm"
                         >
                           Ir a Google AI Studio
                         </a>
@@ -73,7 +73,7 @@ const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onKeySave }) => {
             </ol>
         </div>
         
-        <div className="mt-6 p-4 rounded-lg bg-blue-100 dark:bg-blue-900/50 border border-blue-200 dark:border-blue-800 text-left flex items-start space-x-3">
+        <div className="mt-6 p-4 rounded-lg bg-blue-100/50 dark:bg-blue-900/20 text-left flex items-start space-x-3 shadow-neumo-light-in dark:shadow-neumo-dark-in">
              <div className="flex-shrink-0 mt-0.5">
                 <InformationCircleIcon className="w-5 h-5 text-blue-600 dark:text-blue-300" />
             </div>
@@ -92,12 +92,12 @@ const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onKeySave }) => {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="Pega tu API Key aquí"
-            className="w-full p-3 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+            className="w-full p-3 border-none rounded-md bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 transition shadow-neumo-light-in dark:shadow-neumo-dark-in"
             required
           />
           <button
             type="submit"
-            className="mt-4 w-full px-6 py-3 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 transition flex items-center justify-center shadow-lg disabled:opacity-50"
+            className="mt-4 w-full px-6 py-3 bg-gradient-to-br from-indigo-500 to-indigo-600 text-white font-semibold rounded-md transition-shadow duration-200 flex items-center justify-center shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in disabled:opacity-50"
             disabled={!apiKey.trim()}
           >
             Guardar y Continuar

@@ -37,22 +37,18 @@ const CalendarView: React.FC<{ trips: Trip[] }> = ({ trips }) => {
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
       const dayTrips = trips.filter(trip => {
-          const tripDates = [
-            trip.departureFlight?.departureDateTime,
-            trip.returnFlight?.departureDateTime,
-            trip.departureFlight?.arrivalDateTime,
-            trip.returnFlight?.arrivalDateTime,
-          ].filter((d): d is string => !!d).map(d => new Date(d));
+          const departureDateStr = trip.departureFlight?.departureDateTime;
+          const returnDateStr = trip.returnFlight?.departureDateTime;
 
-          if (tripDates.length === 0) return false;
-
-          const startDate = new Date(Math.min(...tripDates.map(d => d.getTime())));
-          const endDate = new Date(Math.max(...tripDates.map(d => d.getTime())));
+          const isSameDay = (dateStr: string | null | undefined): boolean => {
+              if (!dateStr) return false;
+              const flightDate = new Date(dateStr);
+              return flightDate.getFullYear() === date.getFullYear() &&
+                     flightDate.getMonth() === date.getMonth() &&
+                     flightDate.getDate() === date.getDate();
+          };
           
-          startDate.setHours(0,0,0,0);
-          endDate.setHours(23,59,59,999);
-          
-          return date >= startDate && date <= endDate;
+          return isSameDay(departureDateStr) || isSameDay(returnDateStr);
       });
       days.push({ key: `current-${day}`, date, isCurrentMonth: true, trips: dayTrips });
     }
@@ -62,13 +58,13 @@ const CalendarView: React.FC<{ trips: Trip[] }> = ({ trips }) => {
   const weekDays = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 p-2 sm:p-4 md:p-6">
+    <div className="bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out p-2 sm:p-4 md:p-6">
       <div className="flex justify-between items-center mb-4">
-        <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700">&lt;</button>
+        <button onClick={handlePrevMonth} className="p-2 rounded-full shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200">&lt;</button>
         <h2 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-white capitalize">
           {currentDate.toLocaleString('es-AR', { month: 'long', year: 'numeric' })}
         </h2>
-        <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700">&gt;</button>
+        <button onClick={handleNextMonth} className="p-2 rounded-full shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200">&gt;</button>
       </div>
 
       <div className="grid grid-cols-7 gap-1 text-center font-semibold text-xs sm:text-sm text-slate-500 dark:text-slate-400">
@@ -77,7 +73,7 @@ const CalendarView: React.FC<{ trips: Trip[] }> = ({ trips }) => {
 
       <div className="grid grid-cols-7 gap-1">
         {calendarData.map(dayInfo => (
-          <div key={dayInfo.key} className={`h-24 md:h-28 border border-slate-200 dark:border-slate-700/50 rounded-md p-1 transition-colors ${!dayInfo.isCurrentMonth ? 'bg-slate-50 dark:bg-slate-800/50' : 'bg-white dark:bg-slate-800'}`}>
+          <div key={dayInfo.key} className={`h-24 md:h-28 rounded-md p-1 transition-colors ${!dayInfo.isCurrentMonth ? 'bg-slate-200 dark:bg-slate-900 opacity-60' : 'bg-slate-100 dark:bg-slate-800 shadow-neumo-light-in dark:shadow-neumo-dark-in'}`}>
             {dayInfo.date && <span className="text-xs sm:text-sm font-semibold">{dayInfo.date.getDate()}</span>}
              <div className="space-y-1 mt-1">
                 {dayInfo.trips.map(trip => (

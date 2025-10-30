@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Trip } from './types';
+import type { Trip, Flight } from './types';
 import Header from './components/Header';
 import TripList from './components/TripList';
 import EmailImporter from './components/EmailImporter';
@@ -147,6 +147,59 @@ const App: React.FC = () => {
   }
 
   const handleAddTrip = (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
+      // --- DUPLICATE CHECK ---
+      const isDuplicate = trips.some(existingTrip => {
+          const newDepFlight = newTripData.departureFlight;
+          const newRetFlight = newTripData.returnFlight;
+
+          const existingDepFlight = existingTrip.departureFlight;
+          const existingRetFlight = existingTrip.returnFlight;
+          
+          const compareDates = (date1Str?: string | null, date2Str?: string | null) => {
+              if (!date1Str || !date2Str) return false;
+              return date1Str.substring(0, 10) === date2Str.substring(0, 10);
+          };
+
+          const isFlightMatch = (newFlight: Flight | null, existingFlight: Flight | null) => {
+              // Both flights must exist
+              if (!newFlight || !existingFlight) return false;
+              // Both flights must have a non-empty flight number
+              if (!newFlight.flightNumber?.trim() || !existingFlight.flightNumber?.trim()) return false;
+              // Both flights must have a departure date
+              if (!newFlight.departureDateTime || !existingFlight.departureDateTime) return false;
+
+              // Normalize flight numbers for a robust comparison
+              const newFlightNum = newFlight.flightNumber.trim().replace(/\s/g, '').toUpperCase();
+              const existingFlightNum = existingFlight.flightNumber.trim().replace(/\s/g, '').toUpperCase();
+
+              return newFlightNum === existingFlightNum &&
+                     compareDates(newFlight.departureDateTime, existingFlight.departureDateTime);
+          };
+
+          if (newDepFlight) {
+              if (isFlightMatch(newDepFlight, existingDepFlight) || isFlightMatch(newDepFlight, existingRetFlight)) {
+                  return true;
+              }
+          }
+          
+          if (newRetFlight) {
+              if (isFlightMatch(newRetFlight, existingDepFlight) || isFlightMatch(newRetFlight, existingRetFlight)) {
+                  return true;
+              }
+          }
+
+          return false;
+      });
+
+      if (isDuplicate) {
+          alert("Este viaje ya existe y no se ha agregado de nuevo.");
+          setIsModalOpen(false);
+          setIsQuickAddModalOpen(false);
+          return;
+      }
+      // --- END DUPLICATE CHECK ---
+
+
       const newTrip: Trip = {
           ...newTripData,
           id: Date.now().toString(),
@@ -265,32 +318,39 @@ const App: React.FC = () => {
   const nextUpcomingFlightInfo = useMemo(() => {
     const now = new Date();
     
-    // Flatten all future flights into a single array
-    const allFutureFlights = sortedTrips.flatMap(trip => {
+    // 1. Aplanamos todos los vuelos (idas y vueltas) en una sola lista.
+    const allFlightsWithDates = sortedTrips.flatMap(trip => {
       const flights = [];
       if (trip.departureFlight?.departureDateTime) {
-        const depDate = new Date(trip.departureFlight.departureDateTime);
-        if (depDate > now) {
-          flights.push({ trip, flight: trip.departureFlight, flightType: 'ida' as const, date: depDate });
+        const date = new Date(trip.departureFlight.departureDateTime);
+        // Solo incluimos vuelos con fecha válida.
+        if (!isNaN(date.getTime())) {
+          flights.push({ trip, flight: trip.departureFlight, flightType: 'ida' as const, date });
         }
       }
       if (trip.returnFlight?.departureDateTime) {
-        const retDate = new Date(trip.returnFlight.departureDateTime);
-        if (retDate > now) {
-          flights.push({ trip, flight: trip.returnFlight, flightType: 'vuelta' as const, date: retDate });
+        const date = new Date(trip.returnFlight.departureDateTime);
+        // Solo incluimos vuelos con fecha válida.
+        if (!isNaN(date.getTime())) {
+            flights.push({ trip, flight: trip.returnFlight, flightType: 'vuelta' as const, date });
         }
       }
       return flights;
     });
 
-    if (allFutureFlights.length === 0) {
+    // 2. Filtramos para quedarnos solo con los vuelos que son en el futuro.
+    const futureFlights = allFlightsWithDates.filter(item => item.date > now);
+    
+    if (futureFlights.length === 0) {
       return null;
     }
 
-    // Sort by date to find the soonest one
-    allFutureFlights.sort((a, b) => a.date.getTime() - b.date.getTime());
+    // 3. Ordenamos los vuelos futuros de forma cronológica para encontrar el más próximo.
+    futureFlights.sort((a, b) => a.date.getTime() - b.date.getTime());
     
-    const { trip, flight, flightType } = allFutureFlights[0];
+    // 4. El próximo vuelo es el primero de la lista ordenada.
+    //    Extraemos las propiedades necesarias para no pasar el objeto 'date' temporal.
+    const { trip, flight, flightType } = futureFlights[0];
     return { trip, flight, flightType };
   }, [sortedTrips]);
 
@@ -355,7 +415,7 @@ const App: React.FC = () => {
               isAirportMode={isAirportMode}
               onToggleAirportMode={handleToggleAirportMode}
             />
-            <div className="text-center py-20 px-6 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-lg shadow-md border border-slate-200/80 dark:border-slate-700/80">
+            <div className="text-center py-20 px-6 bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out">
                 <h2 className="mt-4 text-2xl font-bold text-slate-800 dark:text-white">Modo Aeropuerto</h2>
                 <p className="mt-2 text-slate-600 dark:text-slate-400">No tienes ningún viaje próximo para mostrar.</p>
             </div>
@@ -379,7 +439,7 @@ const App: React.FC = () => {
       
       <main className="pb-40">
           <>
-            {nextUpcomingFlightInfo && (
+            {nextUpcomingFlightInfo && view === 'list' && (
               <NextTripCard 
                 flight={nextUpcomingFlightInfo.flight}
                 flightType={nextUpcomingFlightInfo.flightType}
@@ -387,15 +447,15 @@ const App: React.FC = () => {
             )}
 
             <div className="flex justify-between items-center mb-4">
-              <div className="flex space-x-1 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm p-1 rounded-lg border border-slate-200/80 dark:border-slate-700/80">
+              <div className="flex space-x-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out">
                   {/* View toggles */}
-                  <button onClick={() => setView('list')} className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${view === 'list' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}><ListBulletIcon className="w-5 h-5" /></button>
-                  <button onClick={() => setView('calendar')} className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${view === 'calendar' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}><CalendarDaysIcon className="w-5 h-5" /></button>
-                  <button onClick={() => setView('costs')} className={`px-3 py-1.5 text-sm font-semibold rounded-md transition ${view === 'costs' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}><CalculatorIcon className="w-5 h-5" /></button>
+                  <button onClick={() => setView('list')} className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-shadow duration-200 ${view === 'list' ? 'shadow-neumo-light-in dark:shadow-neumo-dark-in text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}`}><ListBulletIcon className="w-5 h-5" /></button>
+                  <button onClick={() => setView('calendar')} className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-shadow duration-200 ${view === 'calendar' ? 'shadow-neumo-light-in dark:shadow-neumo-dark-in text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}`}><CalendarDaysIcon className="w-5 h-5" /></button>
+                  <button onClick={() => setView('costs')} className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-shadow duration-200 ${view === 'costs' ? 'shadow-neumo-light-in dark:shadow-neumo-dark-in text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}`}><CalculatorIcon className="w-5 h-5" /></button>
               </div>
               
               {view === 'list' && (
-                  <select value={listFilter} onChange={(e) => setListFilter(e.target.value as ListFilter)} className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm border border-slate-200/80 dark:border-slate-700/80 rounded-lg px-3 py-1.5 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                  <select value={listFilter} onChange={(e) => setListFilter(e.target.value as ListFilter)} className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-1.5 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-neumo-light-out dark:shadow-neumo-dark-out appearance-none">
                       <option value="future">Próximos</option>
                       <option value="completed">Completados</option>
                       <option value="currentMonth">Este Mes</option>
@@ -426,12 +486,12 @@ const App: React.FC = () => {
                     }`}
                 >
                     <div className="flex items-center space-x-3">
-                        <span className="bg-white/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 text-sm font-semibold px-3 py-1.5 rounded-lg shadow-md">
+                        <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-semibold px-3 py-1.5 rounded-lg shadow-neumo-light-out dark:shadow-neumo-dark-out">
                             Agregado Rápido
                         </span>
                         <button
                             onClick={handleQuickAddClick}
-                            className="bg-amber-500 text-white p-3 rounded-full shadow-lg hover:bg-amber-600 transition"
+                            className="bg-amber-500 text-white p-3 rounded-full transition-all duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in"
                             aria-label="Agregar viaje manualmente"
                         >
                             <BoltIcon className="h-6 w-6" />
@@ -439,12 +499,12 @@ const App: React.FC = () => {
                     </div>
 
                     <div className="flex items-center space-x-3">
-                        <span className="bg-white/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 text-sm font-semibold px-3 py-1.5 rounded-lg shadow-md">
+                         <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-semibold px-3 py-1.5 rounded-lg shadow-neumo-light-out dark:shadow-neumo-dark-out">
                             Importar con IA
                         </span>
                         <button
                             onClick={handleAiImportClick}
-                            className="bg-indigo-600 text-white p-3 rounded-full shadow-lg hover:bg-indigo-700 transition"
+                            className="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white p-3 rounded-full transition-all duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in"
                             aria-label="Importar viaje usando IA"
                         >
                             <MailIcon className="h-6 w-6" />
@@ -454,7 +514,7 @@ const App: React.FC = () => {
               
                 <button
                     onClick={() => setIsFabMenuOpen(!isFabMenuOpen)}
-                    className="bg-indigo-600 text-white p-4 rounded-full shadow-lg transition-all duration-300 hover:bg-indigo-700 transform hover:scale-105 active:scale-95 animate-pulse-glow"
+                    className="bg-gradient-to-br from-teal-500 to-cyan-600 text-white p-4 rounded-full transition-all duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in active:scale-95 transform"
                     aria-label={isFabMenuOpen ? "Cerrar menú" : "Agregar viaje"}
                     aria-expanded={isFabMenuOpen}
                 >

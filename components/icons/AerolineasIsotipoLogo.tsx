@@ -1,11 +1,11 @@
 import React from 'react';
 
-// Isotipo (cóndor) de Aerolíneas Argentinas, que se usará como logo principal en toda la app.
-export const AerolineasLogo: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+// Isotipo (cóndor) de Aerolíneas Argentinas, extraído del SVG oficial para una representación fiel.
+export const AerolineasIsotipoLogo: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     viewBox="170 0 80 25" // Vista recortada para centrar solo el isotipo
-    aria-label="Logo de Aerolíneas Argentinas"
+    aria-label="Isotipo de Aerolíneas Argentinas"
     {...props}
   >
     <path

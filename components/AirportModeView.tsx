@@ -78,16 +78,19 @@ const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightT
                     onClose={() => setIsViewerOpen(false)}
                 />
             )}
-            <div className="fixed inset-0 bg-slate-100 dark:bg-slate-900 z-50 p-4 flex flex-col">
-                <header className="flex justify-between items-center pb-4 border-b border-slate-300 dark:border-slate-700">
-                    <h1 className="text-xl font-bold text-indigo-600 dark:text-indigo-400">Modo Aeropuerto</h1>
-                    <button onClick={onClose} className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-300">
+            <div className="fixed inset-0 bg-slate-100 dark:bg-slate-800 z-50 p-4 flex flex-col">
+                <header className="flex justify-between items-center pb-4 flex-shrink-0">
+                    <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Modo Aeropuerto</h1>
+                    <button 
+                        onClick={onClose} 
+                        className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 p-2 rounded-full shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200"
+                    >
                         <XCircleIcon className="w-8 h-8"/>
                     </button>
                 </header>
 
-                <main className="flex-grow flex flex-col justify-between pt-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md p-4 border border-slate-200 dark:border-slate-700">
+                <main className="flex-grow flex flex-col pt-4 space-y-4 overflow-hidden">
+                    <div className="bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out p-4 flex-shrink-0">
                          <div className="flex justify-between items-center">
                             <div>
                                 <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">{flight.airline}</p>
@@ -100,13 +103,13 @@ const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightT
                                 {flight.departureCity} &rarr; {flight.arrivalCity}
                             </p>
                         </div>
-                        <div className="text-center bg-slate-100 dark:bg-slate-700/50 rounded-lg p-2">
+                        <div className="text-center rounded-lg p-2 shadow-neumo-light-in dark:shadow-neumo-dark-in">
                              <p className="text-lg font-semibold text-slate-700 dark:text-slate-300 capitalize">{formatDate(flight.departureDateTime)}</p>
                              <p className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{formatTime(flight.departureDateTime)} hs</p>
                         </div>
                     </div>
 
-                    <div className="flex-grow flex flex-col items-center justify-center text-center my-4 p-4 bg-white dark:bg-slate-800 rounded-lg shadow-md border border-slate-200 dark:border-slate-700">
+                    <div className="flex-grow flex flex-col items-center justify-center text-center p-4 bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out">
                         {isLoading && <Spinner />}
                         {error && !isLoading && (
                             <div className="text-red-500">
@@ -117,14 +120,19 @@ const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightT
                             </div>
                         )}
                         {boardingPassData && !isLoading && (
-                            <div className="w-full h-full flex flex-col justify-center items-center cursor-pointer" onClick={() => setIsViewerOpen(true)}>
-                                <p className="font-semibold mb-2">Toca para ver en pantalla completa</p>
+                            <button
+                                type="button"
+                                className="w-full h-full flex flex-col justify-center items-center cursor-pointer group focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 rounded-lg p-2 active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200"
+                                onClick={() => setIsViewerOpen(true)}
+                                aria-label="Ver tarjeta de embarque en pantalla completa"
+                            >
+                                <p className="font-semibold mb-2 text-slate-700 dark:text-slate-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Toca para ver en pantalla completa</p>
                                 <img 
                                     src={boardingPassData.fileURL} 
                                     alt="Vista previa de la tarjeta de embarque" 
-                                    className="max-h-64 w-auto object-contain rounded-md shadow-lg"
+                                    className="max-h-64 w-auto object-contain rounded-md shadow-lg group-hover:shadow-xl transition-shadow"
                                 />
-                            </div>
+                            </button>
                         )}
                     </div>
                 </main>

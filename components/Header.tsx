@@ -14,7 +14,7 @@ const Header: React.FC<HeaderProps> = ({ theme, onToggleTheme, isAirportMode, on
     
   return (
     <header className="flex justify-between items-center mb-8 py-2">
-       <div className="flex items-center space-x-2 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm p-1 rounded-full border border-slate-200/80 dark:border-slate-700/80">
+       <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-full shadow-neumo-light-out dark:shadow-neumo-dark-out">
         <button
           onClick={onToggleAirportMode}
           role="switch"
@@ -28,7 +28,7 @@ const Header: React.FC<HeaderProps> = ({ theme, onToggleTheme, isAirportMode, on
         </button>
          <button
           onClick={onToggleTheme}
-          className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900 transition-colors"
+          className="p-2 rounded-full text-slate-500 dark:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900 transition-colors"
           aria-label="Cambiar tema"
         >
           {theme === 'light' ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}

@@ -9,7 +9,7 @@ interface InstallBannerProps {
 
 const InstallBanner: React.FC<InstallBannerProps> = ({ onInstall, onDismiss }) => {
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-2xl bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-4 rounded-xl shadow-2xl flex items-center justify-between z-50 animate-pulse-glow">
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-2xl bg-gradient-to-r from-purple-600 to-indigo-700 text-white p-4 rounded-xl shadow-2xl flex items-center justify-between z-50">
       <div className="flex items-center space-x-4">
         <div className="bg-white/20 p-2 rounded-full hidden sm:block">
             <ArrowDownTrayIcon className="h-6 w-6"/>
