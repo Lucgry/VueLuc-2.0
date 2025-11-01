@@ -32,7 +32,8 @@ const tripSchema = {
   required: ["bookingReference", "flights"]
 };
 
-export const parseFlightEmail = async (emailText: string, apiKey: string, pdfBase64?: string | null): Promise<Omit<Trip, 'id' | 'createdAt'>> => {
+// FIX: Removed apiKey parameter to adhere to security guidelines. The key is now sourced from environment variables.
+export const parseFlightEmail = async (emailText: string, pdfBase64?: string | null): Promise<Omit<Trip, 'id' | 'createdAt'>> => {
   const pdfInstruction = pdfBase64 
     ? `
     DATOS DEL PDF ADJUNTO:
@@ -58,10 +59,8 @@ export const parseFlightEmail = async (emailText: string, apiKey: string, pdfBas
   `;
 
   try {
-    if (!apiKey) {
-      throw new Error("La clave de API no está configurada. No se puede comunicar con el servicio de IA.");
-    }
-    const ai = new GoogleGenAI({ apiKey });
+    // FIX: Initialize GoogleGenAI with the API key from environment variables, as per guidelines.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const parts: Part[] = [
       { text: instructions },
@@ -134,13 +133,11 @@ export const parseFlightEmail = async (emailText: string, apiKey: string, pdfBas
   } catch (error) {
     console.error("Error parsing flight email with Gemini:", error);
     const message = error instanceof Error ? error.message : "An unknown error occurred during parsing.";
-
+    // FIX: Updated error message as the user can no longer configure the API key in the UI.
     if (message.includes('API key not valid') || message.includes('API key is invalid') || message.includes('Requested entity was not found')) {
-        throw new Error("La API Key seleccionada no es válida o no tiene permisos. Por favor, configúrala de nuevo.");
+        throw new Error("La API Key no es válida o no tiene los permisos necesarios.");
     }
-    if (message.includes("La clave de API no está configurada")) {
-        throw new Error("Error de configuración: La clave de API no está configurada. No se puede comunicar con el servicio de IA.");
-    }
+    // FIX: Removed obsolete error check for missing API key.
     if (message.includes('JSON')) {
         throw new Error("La IA no pudo procesar el email. Asegúrate de que el texto copiado sea claro y contenga los detalles del vuelo.");
     }

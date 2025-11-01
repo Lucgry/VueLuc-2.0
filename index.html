@@ -11,7 +11,23 @@
         darkMode: 'class',
         theme: {
           extend: {
-            // Se eliminaron las sombras de neumorfismo para adoptar un nuevo estilo de diseño.
+            keyframes: {
+              aurora: {
+                '0%': { transform: 'translate(0px, 0px) scale(1)' },
+                '25%': { transform: 'translate(40px, -20px) scale(1.1)' },
+                '50%': { transform: 'translate(20px, 30px) scale(0.9)' },
+                '75%': { transform: 'translate(-30px, 20px) scale(1.05)' },
+                '100%': { transform: 'translate(0px, 0px) scale(1)' },
+              },
+              glow: {
+                '0%, 100%': { boxShadow: '0 0 10px #a855f7, 0 0 20px #a855f7, 0 0 30px #a855f7' },
+                '50%': { boxShadow: '0 0 20px #c084fc, 0 0 30px #c084fc, 0 0 40px #c084fc' },
+              }
+            },
+            animation: {
+              aurora: 'aurora 20s ease-in-out infinite alternate',
+              glow: 'glow 2.5s ease-in-out infinite',
+            },
           },
         },
       }
@@ -20,15 +36,42 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     
-    <!-- PWA Manifest and Theme Color -->
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#4f46e5">
+    <meta name="theme-color" content="#1e293b">
 
     <style>
       body {
         font-family: 'Inter', sans-serif;
+        overflow-x: hidden;
+        position: relative;
       }
-      /* Se elimina la animación de pulso anterior para reemplazarla con el nuevo estilo neumórfico */
+      .dark body {
+        background-color: #020617; /* slate-950 as a fallback */
+      }
+      .dark body::before, .dark body::after {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: -1;
+        opacity: 0.2;
+        filter: blur(100px);
+        will-change: transform;
+      }
+      .dark body::before {
+        background-image: radial-gradient(circle at 20% 30%, #4f46e5, transparent 40%);
+        animation: aurora 18s ease-in-out infinite alternate;
+      }
+      .dark body::after {
+        background-image: radial-gradient(circle at 80% 70%, #7c3aed, transparent 40%);
+        animation: aurora 22s ease-in-out infinite alternate-reverse;
+      }
+      .next-trip-glow {
+        animation: glow 2.5s ease-in-out infinite;
+        border-radius: 0.75rem; /* Asegura que el brillo siga la forma de la tarjeta */
+      }
     </style>
   <script type="importmap">
 {
@@ -47,7 +90,7 @@
 }
 </script>
 </head>
-  <body class="bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-800 text-slate-800 dark:text-slate-200 min-h-screen">
+  <body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 min-h-screen">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

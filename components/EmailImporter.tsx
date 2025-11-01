@@ -5,10 +5,8 @@ import { Spinner } from './Spinner';
 import { MailIcon } from './icons/MailIcon';
 
 interface EmailImporterProps {
-  apiKey: string;
   onClose: () => void;
   onAddTrip: (newTrip: Omit<Trip, 'id' | 'createdAt'>) => void;
-  onInvalidApiKey: () => void;
 }
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -24,7 +22,7 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-const EmailImporter: React.FC<EmailImporterProps> = ({ apiKey, onClose, onAddTrip, onInvalidApiKey }) => {
+const EmailImporter: React.FC<EmailImporterProps> = ({ onClose, onAddTrip }) => {
   const [emailText, setEmailText] = useState('');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,14 +40,12 @@ const EmailImporter: React.FC<EmailImporterProps> = ({ apiKey, onClose, onAddTri
       if (pdfFile) {
         pdfBase64 = await fileToBase64(pdfFile);
       }
-      const newTrip = await parseFlightEmail(emailText, apiKey, pdfBase64);
+      // FIX: Call parseFlightEmail without apiKey, as it's now handled by the service.
+      const newTrip = await parseFlightEmail(emailText, pdfBase64);
       onAddTrip(newTrip);
     } catch (err) {
-      if (err instanceof Error && (err.message.includes('no es válida') || err.message.includes('not valid'))) {
-        onInvalidApiKey();
-      } else {
-        setError(err instanceof Error ? err.message : 'Ocurrió un error inesperado.');
-      }
+      // FIX: Simplified error handling. onInvalidApiKey is removed, and all errors are displayed to the user.
+      setError(err instanceof Error ? err.message : 'Ocurrió un error inesperado.');
     } finally {
       setIsLoading(false);
     }

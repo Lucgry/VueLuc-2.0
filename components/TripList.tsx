@@ -33,7 +33,7 @@ const emptyMessages = {
     },
     completed: {
         title: "No hay viajes completados",
-        message: "Los viajes que hayas finalizado se mostrarán aquí.",
+        message: "Los viajes que hayas finalizado se muestran aquí.",
         icon: <CheckBadgeIcon className="mx-auto h-16 w-16 text-slate-400" />
     }
 };
@@ -47,9 +47,9 @@ const getTripEndDate = (trip: Trip): string | null => {
 
 const YearSeparator: React.FC<{ year: number }> = ({ year }) => (
   <div className="flex items-center space-x-4 my-6" aria-hidden="true">
-    <div className="flex-1 h-px bg-slate-700"></div>
-    <span className="font-bold text-lg text-slate-500 dark:text-slate-400">{year}</span>
-    <div className="flex-1 h-px bg-slate-700"></div>
+    <div className="flex-1 h-px bg-slate-700/50"></div>
+    <span className="font-bold text-lg text-slate-400">{year}</span>
+    <div className="flex-1 h-px bg-slate-700/50"></div>
   </div>
 );
 
@@ -57,10 +57,10 @@ const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, ne
   if (trips.length === 0) {
     const { title, message, icon } = emptyMessages[listFilter] || emptyMessages.future;
     return (
-      <div className="text-center py-20 px-6 bg-slate-800/50 rounded-xl">
+      <div className="text-center py-20 px-6 bg-slate-800/50 backdrop-blur-md border border-slate-700/50 rounded-xl">
         {icon}
-        <h2 className="mt-4 text-2xl font-bold text-slate-800 dark:text-white">{title}</h2>
-        <p className="mt-2 text-slate-600 dark:text-slate-400">{message}</p>
+        <h2 className="mt-4 text-2xl font-bold text-white">{title}</h2>
+        <p className="mt-2 text-slate-400">{message}</p>
       </div>
     );
   }

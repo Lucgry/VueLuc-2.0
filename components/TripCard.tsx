@@ -15,7 +15,7 @@ import { Spinner } from './Spinner';
 
 
 const TicketIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24" strokeWidth={1.5} stroke="currentColor" {...props}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-1.5h5.25m-5.25 0h5.25m-5.25-2.25h5.25m-5.25 2.25h5.25M9 7.5a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5A.75.75 0 0 1 9 7.5Zm-5.25 9a.75.75 0 0 1 .75-.75h13.5a.75.75 0 0 1 0 1.5H4.5a.75.75 0 0 1-.75-.75Z" />
   </svg>
 );
@@ -311,6 +311,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
             text += '🛬 VUELTA:\n';
             text += `${returnFlight.airline || ''} (Vuelo ${returnFlight.flightNumber || ''})\n`;
             text += `🗓️ ${formatDate(returnFlight.departureDateTime)}\n`;
+            // FIX: Corrected property name from departureCode to departureAirportCode.
             text += `Sale ${returnFlight.departureCity} (${returnFlight.departureAirportCode}) a las ${formatTime(returnFlight.departureDateTime)} hs\n`;
             text += `Llega ${returnFlight.arrivalCity} (${returnFlight.arrivalAirportCode}) a las ${formatTime(returnFlight.arrivalDateTime)} hs\n`;
         }
@@ -366,7 +367,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                 }}
             />
         )}
-        <div className={`relative bg-slate-800/50 rounded-xl transition-all duration-300 border border-slate-700/50 ${isPast ? 'opacity-60 hover:opacity-100' : ''} ${isNext ? 'ring-2 ring-purple-500' : ''}`}>
+        <div className={`relative bg-slate-800/50 backdrop-blur-md rounded-xl transition-all duration-300 border border-slate-700/50 ${isPast ? 'opacity-60 hover:opacity-100' : ''} ${isNext ? 'next-trip-glow' : ''}`}>
              <div 
                 className="p-4 cursor-pointer"
                 onClick={() => setIsExpanded(!isExpanded)}

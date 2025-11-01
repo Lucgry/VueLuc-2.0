@@ -16,7 +16,7 @@ import { PencilSquareIcon } from './components/icons/PencilSquareIcon';
 import { MailIcon } from './components/icons/MailIcon';
 import { deleteBoardingPassesForTrip } from './services/db';
 import AirportModeView from './components/AirportModeView';
-import ApiKeySetup from './components/ApiKeySetup';
+// import ApiKeySetup from './components/ApiKeySetup';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { db, auth, isFirebaseInitialized, firebaseInitializationError, projectId } from './firebase';
 import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, updateDoc } from 'firebase/firestore';
@@ -178,7 +178,6 @@ const App: React.FC = () => {
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallBannerVisible, setIsInstallBannerVisible] = useState(false);
   const [isAirportMode, setIsAirportMode] = useState(false);
-  const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('apiKey'));
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'light' || savedTheme === 'dark') {
@@ -293,16 +292,6 @@ const App: React.FC = () => {
 
   const handleToggleAirportMode = () => {
       setIsAirportMode(prev => !prev);
-  }
-
-  const handleSaveApiKey = (key: string) => {
-    localStorage.setItem('apiKey', key);
-    setApiKey(key);
-  };
-  
-  const handleInvalidApiKey = () => {
-    localStorage.removeItem('apiKey');
-    setApiKey(null);
   }
 
   const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
@@ -462,10 +451,6 @@ const App: React.FC = () => {
         return <LoginScreen />;
     }
     
-    if (!apiKey) {
-        return <ApiKeySetup onKeySave={handleSaveApiKey} />;
-    }
-
     if (isAirportMode && nextTripInfo && nextTripInfo.flight) {
         return (
             <AirportModeView 
@@ -499,7 +484,7 @@ const App: React.FC = () => {
                 )}
 
                 <div className="mb-4">
-                    <div className="bg-slate-800/80 backdrop-blur-sm p-1 rounded-full flex items-center justify-center space-x-1 max-w-sm mx-auto">
+                    <div className="bg-slate-800/50 backdrop-blur-md border border-slate-700/50 p-1 rounded-full flex items-center justify-center space-x-1 max-w-sm mx-auto">
                         {([
                             { viewName: 'list', Icon: ListBulletIcon, label: 'Lista' },
                             { viewName: 'calendar', Icon: CalendarDaysIcon, label: 'Calendario' },
@@ -508,7 +493,7 @@ const App: React.FC = () => {
                             <button
                                 key={viewName}
                                 onClick={() => setView(viewName)}
-                                className={`w-full px-3 py-2 text-sm font-semibold rounded-full flex items-center justify-center space-x-2 transition-colors duration-300 ${view === viewName ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                                className={`w-full px-3 py-2 text-sm font-semibold rounded-full flex items-center justify-center space-x-2 transition-colors duration-300 ${view === viewName ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800/50'}`}
                                 aria-pressed={view === viewName}
                             >
                                 <Icon className="h-5 w-5" />
@@ -520,12 +505,12 @@ const App: React.FC = () => {
 
                 {view === 'list' && (
                     <div className="mb-6 flex justify-center">
-                        <div className="bg-slate-800/80 backdrop-blur-sm p-1 rounded-full flex items-center space-x-1">
+                        <div className="bg-slate-800/50 backdrop-blur-md border border-slate-700/50 p-1 rounded-full flex items-center space-x-1">
                              {filterOptions.map(opt => (
                                 <button
                                     key={opt.key}
                                     onClick={() => setListFilter(opt.key)}
-                                    className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors duration-300 ${listFilter === opt.key ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                                    className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors duration-300 ${listFilter === opt.key ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800/50'}`}
                                     aria-pressed={listFilter === opt.key}
                                 >
                                     {opt.label}
@@ -539,11 +524,11 @@ const App: React.FC = () => {
                 {view === 'calendar' && <CalendarView trips={trips} />}
                 {view === 'costs' && <CostSummary trips={trips} />}
 
-                {isModalOpen && <EmailImporter apiKey={apiKey} onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} onInvalidApiKey={handleInvalidApiKey} />}
+                {isModalOpen && <EmailImporter onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} />}
                 {isQuickAddModalOpen && <QuickAddModal onClose={() => setIsQuickAddModalOpen(false)} onAddTrip={handleAddTrip} />}
 
                 <div className="fixed bottom-6 right-6 z-40">
-                    <div className="relative">
+                    <div className="relative flex flex-col items-center">
                         {isFabMenuOpen && (
                             <div className="flex flex-col items-center space-y-3 mb-3">
                                 <div className="group relative">
@@ -552,12 +537,13 @@ const App: React.FC = () => {
                                             setIsQuickAddModalOpen(true);
                                             setIsFabMenuOpen(false);
                                         }}
-                                        className="w-14 h-14 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-transform duration-200 hover:scale-105"
+                                        className={`w-14 h-14 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 ease-in-out hover:scale-110 ${isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
+                                        style={{ transitionDelay: isFabMenuOpen ? '150ms' : '0ms' }}
                                         aria-label="Agregar viaje manualmente"
                                     >
                                         <PencilSquareIcon className="h-7 w-7 text-sky-600 dark:text-sky-400" />
                                     </button>
-                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                                         Manual
                                     </span>
                                 </div>
@@ -568,12 +554,13 @@ const App: React.FC = () => {
                                             setIsModalOpen(true);
                                             setIsFabMenuOpen(false);
                                         }}
-                                        className="w-14 h-14 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-transform duration-200 hover:scale-105"
+                                        className={`w-14 h-14 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 ease-in-out hover:scale-110 ${isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
+                                         style={{ transitionDelay: isFabMenuOpen ? '100ms' : '50ms' }}
                                         aria-label="Agregar viaje con IA"
                                     >
                                         <MailIcon className="h-7 w-7 text-indigo-600 dark:text-indigo-400" />
                                     </button>
-                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                                         Con IA
                                     </span>
                                 </div>
