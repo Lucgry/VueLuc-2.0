@@ -46,9 +46,9 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
 
     const availableYears = useMemo(() => {
         const yearsSet = trips.reduce((acc, trip) => {
-            const dateStr = trip.departureFlight?.departureDateTime || trip.returnFlight?.departureDateTime;
-            if (dateStr) {
-                const year = new Date(dateStr).getFullYear();
+            const purchaseDateStr = trip.createdAt;
+            if (purchaseDateStr) {
+                const year = new Date(purchaseDateStr).getFullYear();
                 if (!Number.isNaN(year)) {
                     acc.add(year);
                 }
@@ -66,8 +66,8 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     
     const tripsForSelectedYear = useMemo(() => {
         return trips.filter(trip => {
-            const dateStr = trip.departureFlight?.departureDateTime || trip.returnFlight?.departureDateTime;
-            return dateStr ? new Date(dateStr).getFullYear() === selectedYear : false;
+            const purchaseDateStr = trip.createdAt;
+            return purchaseDateStr ? new Date(purchaseDateStr).getFullYear() === selectedYear : false;
         });
     }, [trips, selectedYear]);
     
@@ -111,13 +111,17 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     const monthlyCosts = useMemo(() => {
         const costs = Array(12).fill(0);
         tripsForSelectedYear.forEach(trip => {
-            if (trip.departureFlight?.departureDateTime && trip.departureFlight.cost) {
-                const month = new Date(trip.departureFlight.departureDateTime).getMonth();
-                costs[month] += trip.departureFlight.cost;
-            }
-            if (trip.returnFlight?.departureDateTime && trip.returnFlight.cost) {
-                const month = new Date(trip.returnFlight.departureDateTime).getMonth();
-                costs[month] += trip.returnFlight.cost;
+            const purchaseDate = trip.createdAt ? new Date(trip.createdAt) : null;
+
+            if (purchaseDate) {
+                const month = purchaseDate.getMonth();
+                const idaCost = trip.departureFlight?.cost || 0;
+                const vueltaCost = trip.returnFlight?.cost || 0;
+                const totalTripCost = idaCost + vueltaCost;
+
+                if (totalTripCost > 0) {
+                    costs[month] += totalTripCost;
+                }
             }
         });
         return costs;
