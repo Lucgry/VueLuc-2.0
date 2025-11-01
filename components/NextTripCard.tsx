@@ -38,7 +38,7 @@ const formatTime = (dateString: string | null) => {
 
 const CountdownUnit: React.FC<{ value: number; label: string }> = ({ value, label }) => (
     <div className="flex flex-col items-center w-16">
-        <div className="w-full text-center p-2 rounded-lg shadow-neumo-light-in dark:shadow-neumo-dark-in">
+        <div className="w-full text-center p-2 rounded-lg bg-slate-900/50">
             <span className="text-3xl font-bold text-slate-800 dark:text-slate-100 tracking-tighter">
                 {formatTimeValue(value)}
             </span>
@@ -69,7 +69,7 @@ const NextTripCard: React.FC<NextTripCardProps> = ({ flight, flightType }) => {
   }
 
   return (
-    <div className="relative bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out p-4 mb-6">
+    <div className="relative bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700/50">
         <button onClick={() => setIsVisible(false)} className="absolute top-2 right-2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors z-10">
             <XCircleIcon className="w-6 h-6" />
         </button>
@@ -85,7 +85,7 @@ const NextTripCard: React.FC<NextTripCardProps> = ({ flight, flightType }) => {
             <CountdownUnit value={countdown.seconds} label="Seg." />
         </div>
 
-        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center text-sm">
+        <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between items-center text-sm">
             <div className="flex items-center space-x-3">
                 <AirlineLogo airline={flight.airline} size="sm" type="isotipo" />
                 <div>

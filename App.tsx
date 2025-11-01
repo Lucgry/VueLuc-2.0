@@ -18,7 +18,7 @@ import { deleteBoardingPassesForTrip } from './services/db';
 import AirportModeView from './components/AirportModeView';
 import ApiKeySetup from './components/ApiKeySetup';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { db, auth, isFirebaseInitialized, firebaseInitializationError, projectId, authDomain } from './firebase';
+import { db, auth, isFirebaseInitialized, firebaseInitializationError, projectId } from './firebase';
 import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, updateDoc } from 'firebase/firestore';
 import LoginScreen from './components/LoginScreen';
 import { FullScreenLoader } from './components/Spinner';
@@ -59,6 +59,66 @@ const getTripEndDate = (trip: Trip): Date | null => {
     const dateStr = trip.returnFlight?.arrivalDateTime || trip.departureFlight?.arrivalDateTime;
     return dateStr ? new Date(dateStr) : null;
 };
+
+const AuthErrorScreen: React.FC<{ error: { links?: { url: string; text: string }[] } }> = ({ error }) => (
+    <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">
+      <div className="max-w-xl w-full bg-slate-100 dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out">
+        <div className="mx-auto mb-4 bg-slate-100 dark:bg-slate-800 text-red-600 dark:text-red-400 w-16 h-16 rounded-full flex items-center justify-center shadow-neumo-light-out dark:shadow-neumo-dark-out">
+          <InformationCircleIcon className="w-10 h-10" />
+        </div>
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Error de Autenticación</h1>
+        
+        <div className="mt-6 p-4 rounded-lg bg-red-100/50 dark:bg-red-900/20 text-left flex items-start space-x-3 shadow-neumo-light-in dark:shadow-neumo-dark-in">
+            <div className="flex-shrink-0 mt-1">
+                <InformationCircleIcon className="w-6 h-6 text-red-600 dark:text-red-300" />
+            </div>
+            <div>
+                <h4 className="font-semibold text-red-800 dark:text-red-200">Acción Requerida:</h4>
+                <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                  ¡Casi listo! Tu inicio de sesión funcionó, pero la app no puede mantener la sesión segura.
+                </p>
+                <p className="text-sm text-red-700 dark:text-red-300 mt-3">
+                  La causa más común es que tu clave de API tiene **Restricciones de sitios web** que bloquean esta aplicación.
+                </p>
+                <p className="text-sm text-red-700 dark:text-red-300 mt-3">
+                    Por favor, sigue estos pasos:
+                </p>
+                <ol className="list-decimal list-inside text-sm text-red-700 dark:text-red-300 mt-2 space-y-2">
+                    <li>Haz clic en "Revisar Restricciones de API Key".</li>
+                    <li>Busca la sección "Restricciones de sitios web".</li>
+                    <li>Asegúrate de que **TODAS** las siguientes URLs estén en la lista de sitios permitidos:
+                        <ul className="list-disc list-inside pl-5 mt-1 space-y-1">
+                            <li><code className="text-xs bg-red-200/50 dark:bg-red-800/30 p-0.5 rounded">https://vueluc-2.netlify.app/*</code></li>
+                            <li><code className="text-xs bg-red-200/50 dark:bg-red-800/30 p-0.5 rounded">https://vueluc-app.firebaseapp.com/*</code></li>
+                        </ul>
+                    </li>
+                </ol>
+                <p className="text-sm text-red-700 dark:text-red-300 mt-3">
+                    Si el problema persiste, verifica que las APIs de Autenticación y STS estén habilitadas (pasos 2 y 3).
+                </p>
+            </div>
+        </div>
+        
+        {error.links && (
+           <div className="mt-6 flex flex-col space-y-3">
+             {error.links.map((link, index) => (
+               <a 
+                    key={index}
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex justify-between items-center w-full px-4 py-3 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-600 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm text-left"
+                >
+                    <span>{link.text.replace('→', '').trim()}</span>
+                    <span>&rarr;</span>
+                </a>
+             ))}
+           </div>
+        )}
+      </div>
+    </div>
+);
+
 
 const App: React.FC = () => {
   if (!isFirebaseInitialized) {
@@ -135,11 +195,11 @@ const App: React.FC = () => {
     if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser && projectId) {
+        setUser(currentUser);
         // Proactively check if token refresh works to catch API errors
         currentUser.getIdToken(true)
           .then(() => {
             setAuthRuntimeError(null);
-            setUser(currentUser);
             setLoadingAuth(false);
           })
           .catch(error => {
@@ -147,28 +207,24 @@ const App: React.FC = () => {
             const isHttpError = error.code === 'auth/network-request-failed' || errorMessage.includes('403') || errorMessage.includes('securetoken') || errorMessage.includes('API_KEY_HTTP_REFERRER_BLOCKED');
             
             if (isHttpError) {
-                const message = `¡Casi listo! Tu inicio de sesión funcionó, pero la app no puede mantener la sesión segura.\n\nLa causa más común es que tu clave de API tiene **Restricciones de sitios web** que bloquean esta aplicación.\n\nPor favor, sigue estos pasos:\n1. Haz clic en "Revisar Restricciones de API Key".\n2. Busca la sección "Restricciones de sitios web".\n3. Asegúrate de que **TODAS** las siguientes URLs estén en la lista de sitios permitidos:\n\n• https://vueluc-2.netlify.app/*\n• https://vueluc-app.firebaseapp.com/*\n\nSi el problema persiste, verifica que las APIs de Autenticación y STS estén habilitadas (pasos 2 y 3).`;
-
                 const links = [
                     {
                         url: `https://console.cloud.google.com/apis/credentials?project=${projectId}`,
-                        text: '1. Revisar Restricciones de API Key'
+                        text: '1. Revisar Restricciones de API Key →'
                     },
                     {
                         url: `https://console.cloud.google.com/apis/library/identitytoolkit.googleapis.com?project=${projectId}`,
-                        text: '2. Habilitar API de Autenticación (Opcional)'
+                        text: '2. Habilitar API de Autenticación (Opcional) →'
                     },
                     {
                         url: `https://console.cloud.google.com/apis/library/sts.googleapis.com?project=${projectId}`,
-                        text: '3. Habilitar API de Tokens (Opcional)'
+                        text: '3. Habilitar API de Tokens (Opcional) →'
                     }
                 ];
-
-                setAuthRuntimeError({ message, links });
+                setAuthRuntimeError({ message: "Auth token refresh failed", links });
             } else {
                setAuthRuntimeError({ message: `Ocurrió un error inesperado durante la autenticación: ${errorMessage}`});
             }
-            setUser(null); // Log out user on verification failure
             setLoadingAuth(false);
         });
       } else {
@@ -181,7 +237,7 @@ const App: React.FC = () => {
 
   // Firestore data loading effect
   useEffect(() => {
-    if (!user || !db) {
+    if (!user || !db || authRuntimeError) { // Do not fetch if there's an auth error
       setTrips([]);
       return;
     }
@@ -200,7 +256,7 @@ const App: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, authRuntimeError]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (event: Event) => {
@@ -208,363 +264,334 @@ const App: React.FC = () => {
       setInstallPromptEvent(event as BeforeInstallPromptEvent);
       
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-      const bannerDismissed = sessionStorage.getItem('installBannerDismissed');
-      
+      const bannerDismissed = sessionStorage.getItem('vueluc.bannerDismissed');
+
       if (!isStandalone && !bannerDismissed) {
-          setIsInstallBannerVisible(true);
+        setIsInstallBannerVisible(true);
       }
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
-    const handleAppInstalled = () => {
-      setInstallPromptEvent(null);
-      setIsInstallBannerVisible(false);
-    };
-    
-    window.addEventListener('appinstalled', handleAppInstalled);
-
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
-  
-  useEffect(() => {
-      if (theme === 'dark') {
-          document.documentElement.classList.add('dark');
-      } else {
-          document.documentElement.classList.remove('dark');
-      }
-      localStorage.setItem('theme', theme);
-  }, [theme]);
-  
-  const handleApiKeySave = (key: string) => {
-    if (key.trim()) {
-        localStorage.setItem('apiKey', key.trim());
-        setApiKey(key.trim());
-    }
-  };
 
-  const handleInvalidApiKey = () => {
-      alert("La API Key no es válida o ha expirado. Por favor, configúrala de nuevo.");
-      localStorage.removeItem('apiKey');
-      setApiKey(null);
-  };
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   const handleToggleTheme = () => {
-      setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
+    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
   };
-  
+
   const handleToggleAirportMode = () => {
       setIsAirportMode(prev => !prev);
   }
 
-  const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
-    if (!user || !db) {
-        alert("Debes iniciar sesión para agregar un viaje.");
-        return;
-    }
-
-    const isDuplicate = trips.some(existingTrip => {
-        const newDepFlight = newTripData.departureFlight;
-        const newRetFlight = newTripData.returnFlight;
-        const existingDepFlight = existingTrip.departureFlight;
-        const existingRetFlight = existingTrip.returnFlight;
-        const compareDates = (date1Str?: string | null, date2Str?: string | null) => !date1Str || !date2Str ? false : date1Str.substring(0, 10) === date2Str.substring(0, 10);
-        const isFlightMatch = (newFlight: Flight | null, existingFlight: Flight | null) => {
-            if (!newFlight || !existingFlight || !newFlight.flightNumber?.trim() || !existingFlight.flightNumber?.trim() || !newFlight.departureDateTime || !existingFlight.departureDateTime) return false;
-            const newFlightNum = newFlight.flightNumber.trim().replace(/\s/g, '').toUpperCase();
-            const existingFlightNum = existingFlight.flightNumber.trim().replace(/\s/g, '').toUpperCase();
-            return newFlightNum === existingFlightNum && compareDates(newFlight.departureDateTime, existingFlight.departureDateTime);
-        };
-        if ((newDepFlight && (isFlightMatch(newDepFlight, existingDepFlight) || isFlightMatch(newDepFlight, existingRetFlight))) ||
-            (newRetFlight && (isFlightMatch(newRetFlight, existingDepFlight) || isFlightMatch(newRetFlight, existingRetFlight)))) {
-            return true;
-        }
-        return false;
-    });
-
-    if (isDuplicate) {
-        alert("Este viaje ya existe y no se ha agregado de nuevo.");
-        setIsModalOpen(false);
-        setIsQuickAddModalOpen(false);
-        return;
-    }
-
-    const isNewTripSingleLeg = (newTripData.departureFlight && !newTripData.returnFlight) || (!newTripData.departureFlight && newTripData.returnFlight);
-
-    if (!isNewTripSingleLeg) {
-        const newTripWithMeta = { ...newTripData, createdAt: new Date().toISOString() };
-        await addDoc(collection(db, 'users', user.uid, 'trips'), newTripWithMeta);
-        setIsModalOpen(false);
-        setIsQuickAddModalOpen(false);
-        return;
-    }
-
-    const newFlight = newTripData.departureFlight || newTripData.returnFlight;
-    const newFlightDate = new Date(newFlight!.departureDateTime!);
-    const isNewTripIda = !!newTripData.departureFlight;
-
-    let bestMatch: { trip: Trip, timeDiff: number } | null = null;
-    
-    for (const existingTrip of trips) {
-        const isExistingSingleLeg = (existingTrip.departureFlight && !existingTrip.returnFlight) || (!existingTrip.departureFlight && existingTrip.returnFlight);
-        if (!isExistingSingleLeg) continue;
-        
-        const existingFlight = existingTrip.departureFlight || existingTrip.returnFlight;
-        const isExistingTripIda = !!existingTrip.departureFlight;
-
-        if (isNewTripIda === isExistingTripIda) continue;
-
-        const existingFlightDate = new Date(existingFlight!.departureDateTime!);
-        const timeDiff = Math.abs(newFlightDate.getTime() - existingFlightDate.getTime());
-
-        if (timeDiff < 15 * 24 * 60 * 60 * 1000) { // 15 days window
-            if (!bestMatch || timeDiff < bestMatch.timeDiff) {
-                bestMatch = { trip: existingTrip, timeDiff };
-            }
-        }
-    }
-
-    if (bestMatch) {
-        const tripToUpdate = { ...bestMatch.trip };
-        if (isNewTripIda) {
-            tripToUpdate.departureFlight = newFlight;
-        } else {
-            tripToUpdate.returnFlight = newFlight;
-        }
-        
-        const tripDocRef = doc(db, 'users', user.uid, 'trips', tripToUpdate.id);
-        const { id, ...dataToUpdate } = tripToUpdate;
-        await updateDoc(tripDocRef, dataToUpdate);
-    } else {
-        const newTripWithMeta = { ...newTripData, createdAt: new Date().toISOString() };
-        await addDoc(collection(db, 'users', user.uid, 'trips'), newTripWithMeta);
-    }
-
-    setIsModalOpen(false);
-    setIsQuickAddModalOpen(false);
+  const handleSaveApiKey = (key: string) => {
+    localStorage.setItem('apiKey', key);
+    setApiKey(key);
   };
   
+  const handleInvalidApiKey = () => {
+    localStorage.removeItem('apiKey');
+    setApiKey(null);
+  }
+
+  const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
+    if (!user || !db) return;
+    try {
+      const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
+      await addDoc(tripsCollectionRef, {
+        ...newTripData,
+        createdAt: new Date().toISOString(),
+      });
+      setIsModalOpen(false);
+      setIsQuickAddModalOpen(false);
+    } catch (error) {
+      console.error("Error adding trip to Firestore:", error);
+      alert('No se pudo agregar el viaje. Por favor, intenta de nuevo.');
+    }
+  };
+
+  const handleUpdateTrip = async (tripId: string, updatedData: Partial<Trip>) => {
+    if (!user || !db) return;
+    try {
+        const tripDocRef = doc(db, 'users', user.uid, 'trips', tripId);
+        await updateDoc(tripDocRef, updatedData);
+    } catch (error) {
+        console.error("Error updating trip in Firestore:", error);
+        alert('No se pudo actualizar el viaje. Por favor, intenta de nuevo.');
+    }
+  };
+
   const handleDeleteTrip = async (tripId: string) => {
     if (!user || !db) return;
     try {
-        await deleteBoardingPassesForTrip(user.uid, tripId);
-        await deleteDoc(doc(db, 'users', user.uid, 'trips', tripId));
+      await deleteBoardingPassesForTrip(user.uid, tripId);
+      const tripDocRef = doc(db, 'users', user.uid, 'trips', tripId);
+      await deleteDoc(tripDocRef);
     } catch (error) {
-        console.error("Error deleting trip:", error);
-        alert("No se pudo eliminar el viaje.");
+      console.error("Error deleting trip:", error);
+      alert('No se pudo eliminar el viaje. Por favor, intenta de nuevo.');
     }
   };
 
-  const sortedTrips = useMemo(() => {
-    return [...trips].sort((a, b) => {
-        const dateA = getTripStartDate(a);
-        const dateB = getTripStartDate(b);
-        if (dateA && dateB) return dateA.getTime() - dateB.getTime();
-        return 0;
+  const handleInstall = () => {
+    installPromptEvent?.prompt();
+    installPromptEvent?.userChoice.then(choiceResult => {
+      if (choiceResult.outcome === 'accepted') {
+        console.log('User accepted the install prompt');
+      } else {
+        console.log('User dismissed the install prompt');
+      }
+      setIsInstallBannerVisible(false);
     });
+  };
+
+  const handleDismissInstallBanner = () => {
+      sessionStorage.setItem('vueluc.bannerDismissed', 'true');
+      setIsInstallBannerVisible(false);
+  };
+
+  const sortedTrips = useMemo(() => {
+      return [...trips].sort((a, b) => {
+          const dateA = getTripStartDate(a);
+          const dateB = getTripStartDate(b);
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          return dateB.getTime() - dateA.getTime();
+      });
   }, [trips]);
-
-  const nextTrip = useMemo(() => {
-    const now = new Date();
-    return sortedTrips.find(trip => {
-      const startDate = getTripStartDate(trip);
-      return startDate ? startDate > now : false;
-    }) || null;
-  }, [sortedTrips]);
-
+  
   const filteredTrips = useMemo(() => {
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-    switch(listFilter) {
+    switch (listFilter) {
       case 'future':
         return sortedTrips.filter(trip => {
-            const startDate = getTripStartDate(trip);
-            return startDate ? startDate >= now : true;
+          const tripEndDate = getTripEndDate(trip);
+          return tripEndDate ? tripEndDate >= now : true;
         });
       case 'completed':
         return sortedTrips.filter(trip => {
-            const endDate = getTripEndDate(trip);
-            return endDate ? endDate < now : false;
-        }).reverse(); // Show most recent completed first
+          const tripEndDate = getTripEndDate(trip);
+          return tripEndDate ? tripEndDate < now : false;
+        });
       case 'currentMonth':
-        return sortedTrips.filter(trip => {
-            const startDate = getTripStartDate(trip);
-            return startDate ? startDate.getMonth() === currentMonth && startDate.getFullYear() === currentYear : false;
+         return sortedTrips.filter(trip => {
+            const tripStartDate = getTripStartDate(trip);
+            return tripStartDate && tripStartDate >= startOfMonth && tripStartDate <= endOfMonth;
         });
       case 'all':
       default:
         return sortedTrips;
     }
   }, [sortedTrips, listFilter]);
+  
+  const nextTripInfo = useMemo(() => {
+    const now = new Date();
+    const futureTrips = sortedTrips
+      .map(trip => {
+        const idaDate = trip.departureFlight?.departureDateTime ? new Date(trip.departureFlight.departureDateTime) : null;
+        const vueltaDate = trip.returnFlight?.departureDateTime ? new Date(trip.returnFlight.departureDateTime) : null;
+        
+        return {
+          trip,
+          idaDate,
+          vueltaDate,
+          idaFlight: trip.departureFlight,
+          vueltaFlight: trip.returnFlight
+        };
+      })
+      .filter(t => (t.idaDate && t.idaDate > now) || (t.vueltaDate && t.vueltaDate > now));
 
-  const nextFlightForCountdown = useMemo(() => {
-    if (!nextTrip) return null;
-    const now = new Date().getTime();
+    if (futureTrips.length === 0) {
+      return null;
+    }
     
-    const depTime = nextTrip.departureFlight?.departureDateTime ? new Date(nextTrip.departureFlight.departureDateTime).getTime() : Infinity;
-    const retTime = nextTrip.returnFlight?.departureDateTime ? new Date(nextTrip.returnFlight.departureDateTime).getTime() : Infinity;
+    let nextFlight: Flight | null = null;
+    let nextFlightType: 'ida' | 'vuelta' | null = null;
+    let nextTrip: Trip | null = null;
+    let nextFlightDate = new Date('2999-12-31');
 
-    if (depTime > now && depTime < retTime) {
-      return { flight: nextTrip.departureFlight!, type: 'ida' as const };
-    }
-    if (retTime > now) {
-      return { flight: nextTrip.returnFlight!, type: 'vuelta' as const };
-    }
-    return null;
-  }, [nextTrip]);
-  
-  const fabAction = (action: 'quick' | 'ai') => {
-      if (action === 'quick') {
-          setIsQuickAddModalOpen(true);
-      } else {
-          setIsModalOpen(true);
+    futureTrips.forEach(t => {
+      if (t.idaDate && t.idaDate > now && t.idaDate < nextFlightDate) {
+        nextFlightDate = t.idaDate;
+        nextFlight = t.idaFlight;
+        nextFlightType = 'ida';
+        nextTrip = t.trip;
       }
-      setIsFabMenuOpen(false);
-  }
+      if (t.vueltaDate && t.vueltaDate > now && t.vueltaDate < nextFlightDate) {
+        nextFlightDate = t.vueltaDate;
+        nextFlight = t.vueltaFlight;
+        nextFlightType = 'vuelta';
+        nextTrip = t.trip;
+      }
+    });
 
-  if (loadingAuth) {
-    return <FullScreenLoader />;
-  }
+    if (nextFlight && nextTrip && nextFlightType) {
+        return {
+            trip: nextTrip,
+            flight: nextFlight,
+            flightType: nextFlightType
+        };
+    }
+
+    return null;
+  }, [sortedTrips]);
   
-  if (authRuntimeError) {
-     return (
-        <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">
-            <div className="max-w-xl w-full bg-slate-100 dark:bg-slate-800 p-8 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out">
-                <div className="mx-auto mb-4 bg-slate-100 dark:bg-slate-800 text-red-600 dark:text-red-400 w-16 h-16 rounded-full flex items-center justify-center shadow-neumo-light-out dark:shadow-neumo-dark-out">
-                    <InformationCircleIcon className="w-8 h-8" />
-                </div>
-                <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Error de Autenticación</h1>
-                 <div className="mt-6 p-4 rounded-lg bg-red-100/50 dark:bg-red-900/20 text-left flex items-start space-x-3 shadow-neumo-light-in dark:shadow-neumo-dark-in">
-                    <div className="flex-shrink-0 mt-0.5">
-                        <InformationCircleIcon className="w-5 h-5 text-red-600 dark:text-red-300" />
+    if (loadingAuth) {
+        return <FullScreenLoader />;
+    }
+
+    if (authRuntimeError) {
+        return <AuthErrorScreen error={authRuntimeError} />;
+    }
+
+    if (!user) {
+        return <LoginScreen />;
+    }
+    
+    if (!apiKey) {
+        return <ApiKeySetup onKeySave={handleSaveApiKey} />;
+    }
+
+    if (isAirportMode && nextTripInfo && nextTripInfo.flight) {
+        return (
+            <AirportModeView 
+                trip={nextTripInfo.trip}
+                flight={nextTripInfo.flight}
+                flightType={nextTripInfo.flightType}
+                onClose={handleToggleAirportMode}
+                userId={user.uid}
+            />
+        )
+    }
+
+    return (
+        <div className="max-w-4xl mx-auto px-4 py-6 font-sans">
+            <Header 
+                theme={theme} 
+                onToggleTheme={handleToggleTheme} 
+                isAirportMode={isAirportMode}
+                onToggleAirportMode={handleToggleAirportMode}
+            />
+            <main className="pb-28">
+                {isInstallBannerVisible && (
+                <InstallBanner 
+                    onInstall={handleInstall} 
+                    onDismiss={handleDismissInstallBanner}
+                />
+                )}
+                
+                {nextTripInfo && nextTripInfo.flight && (
+                    <NextTripCard flight={nextTripInfo.flight} flightType={nextTripInfo.flightType} />
+                )}
+
+                <div className="mb-4">
+                    <div className="bg-slate-800/80 backdrop-blur-sm p-1 rounded-full flex items-center justify-center space-x-1 max-w-sm mx-auto">
+                        {([
+                            { viewName: 'list', Icon: ListBulletIcon, label: 'Lista' },
+                            { viewName: 'calendar', Icon: CalendarDaysIcon, label: 'Calendario' },
+                            { viewName: 'costs', Icon: CalculatorIcon, label: 'Costos' },
+                        ] as const).map(({ viewName, Icon, label }) => (
+                            <button
+                                key={viewName}
+                                onClick={() => setView(viewName)}
+                                className={`w-full px-3 py-2 text-sm font-semibold rounded-full flex items-center justify-center space-x-2 transition-colors duration-300 ${view === viewName ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                                aria-pressed={view === viewName}
+                            >
+                                <Icon className="h-5 w-5" />
+                                <span>{label}</span>
+                            </button>
+                        ))}
                     </div>
-                    <div>
-                        <h4 className="font-semibold text-red-800 dark:text-red-200">Acción Requerida:</h4>
-                        <p className="text-sm text-red-700 dark:text-red-300 mt-1 whitespace-pre-wrap">
-                            {authRuntimeError.message}
-                        </p>
-                        {authRuntimeError.links && (
-                           <div className="mt-4 flex flex-col space-y-2">
-                            {authRuntimeError.links.map((link, index) => (
-                                <a 
-                                    key={index}
-                                    href={link.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-block px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm text-center"
+                </div>
+
+                {view === 'list' && (
+                    <div className="mb-6 flex justify-center">
+                        <div className="bg-slate-800/80 backdrop-blur-sm p-1 rounded-full flex items-center space-x-1">
+                             {filterOptions.map(opt => (
+                                <button
+                                    key={opt.key}
+                                    onClick={() => setListFilter(opt.key)}
+                                    className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors duration-300 ${listFilter === opt.key ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                                    aria-pressed={listFilter === opt.key}
                                 >
-                                    {link.text} &rarr;
-                                </a>
-                            ))}
-                           </div>
+                                    {opt.label}
+                                </button>
+                             ))}
+                        </div>
+                    </div>
+                )}
+
+                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripInfo?.trip.id ?? null} userId={user.uid} />}
+                {view === 'calendar' && <CalendarView trips={trips} />}
+                {view === 'costs' && <CostSummary trips={trips} />}
+
+                {isModalOpen && <EmailImporter apiKey={apiKey} onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} onInvalidApiKey={handleInvalidApiKey} />}
+                {isQuickAddModalOpen && <QuickAddModal onClose={() => setIsQuickAddModalOpen(false)} onAddTrip={handleAddTrip} />}
+
+                <div className="fixed bottom-6 right-6 z-40">
+                    <div className="relative">
+                        {isFabMenuOpen && (
+                            <div className="flex flex-col items-center space-y-3 mb-3">
+                                <div className="group relative">
+                                    <button
+                                        onClick={() => {
+                                            setIsQuickAddModalOpen(true);
+                                            setIsFabMenuOpen(false);
+                                        }}
+                                        className="w-14 h-14 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-transform duration-200 hover:scale-105"
+                                        aria-label="Agregar viaje manualmente"
+                                    >
+                                        <PencilSquareIcon className="h-7 w-7 text-sky-600 dark:text-sky-400" />
+                                    </button>
+                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                                        Manual
+                                    </span>
+                                </div>
+                            
+                                <div className="group relative">
+                                    <button
+                                        onClick={() => {
+                                            setIsModalOpen(true);
+                                            setIsFabMenuOpen(false);
+                                        }}
+                                        className="w-14 h-14 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-transform duration-200 hover:scale-105"
+                                        aria-label="Agregar viaje con IA"
+                                    >
+                                        <MailIcon className="h-7 w-7 text-indigo-600 dark:text-indigo-400" />
+                                    </button>
+                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                                        Con IA
+                                    </span>
+                                </div>
+                            </div>
                         )}
+                        <button
+                            onClick={() => setIsFabMenuOpen(!isFabMenuOpen)}
+                            className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-110 focus:outline-none focus:ring-4 focus:ring-indigo-500/50"
+                            aria-haspopup="true"
+                            aria-expanded={isFabMenuOpen}
+                        >
+                            <PlusCircleIcon className={`h-9 w-9 transition-transform duration-300 ${isFabMenuOpen ? 'rotate-45' : ''}`} />
+                        </button>
                     </div>
                 </div>
-            </div>
+            </main>
         </div>
     );
-  }
-
-  if (!user) {
-    return <LoginScreen />;
-  }
-
-  if (!apiKey) {
-    return <ApiKeySetup onKeySave={handleApiKeySave} />;
-  }
-  
-  if (isAirportMode && nextFlightForCountdown) {
-      return <AirportModeView trip={nextTrip!} flight={nextFlightForCountdown.flight} flightType={nextFlightForCountdown.type} onClose={handleToggleAirportMode} userId={user.uid} />
-  }
-
-  return (
-    <div className="max-w-4xl mx-auto p-4 md:p-6">
-        <Header theme={theme} onToggleTheme={handleToggleTheme} isAirportMode={isAirportMode} onToggleAirportMode={handleToggleAirportMode} />
-        
-        {isInstallBannerVisible && installPromptEvent && (
-            <InstallBanner 
-                onInstall={() => installPromptEvent.prompt()}
-                onDismiss={() => {
-                    setIsInstallBannerVisible(false);
-                    sessionStorage.setItem('installBannerDismissed', 'true');
-                }}
-            />
-        )}
-        
-        {isModalOpen && <EmailImporter apiKey={apiKey} onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} onInvalidApiKey={handleInvalidApiKey} />}
-        {isQuickAddModalOpen && <QuickAddModal onClose={() => setIsQuickAddModalOpen(false)} onAddTrip={handleAddTrip} />}
-
-        <main>
-            {nextFlightForCountdown && (
-                <NextTripCard flight={nextFlightForCountdown.flight} flightType={nextFlightForCountdown.type} />
-            )}
-            
-            <div className="flex justify-center mb-6 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-full shadow-neumo-light-in dark:shadow-neumo-dark-in">
-                <button onClick={() => setView('list')} className={`px-4 py-1.5 rounded-full text-sm font-semibold flex items-center space-x-2 transition-all duration-300 ${view === 'list' ? 'bg-white dark:bg-slate-700 shadow-md' : 'text-slate-500'}`}>
-                    <ListBulletIcon className="w-5 h-5" /><span>Lista</span>
-                </button>
-                <button onClick={() => setView('calendar')} className={`px-4 py-1.5 rounded-full text-sm font-semibold flex items-center space-x-2 transition-all duration-300 ${view === 'calendar' ? 'bg-white dark:bg-slate-700 shadow-md' : 'text-slate-500'}`}>
-                    <CalendarDaysIcon className="w-5 h-5" /><span>Calendario</span>
-                </button>
-                <button onClick={() => setView('costs')} className={`px-4 py-1.5 rounded-full text-sm font-semibold flex items-center space-x-2 transition-all duration-300 ${view === 'costs' ? 'bg-white dark:bg-slate-700 shadow-md' : 'text-slate-500'}`}>
-                    <CalculatorIcon className="w-5 h-5" /><span>Costos</span>
-                </button>
-            </div>
-            
-            {view === 'list' && (
-              <>
-                <div className="flex justify-center mb-6 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-full shadow-neumo-light-in dark:shadow-neumo-dark-in">
-                  {filterOptions.map(({ key, label }) => (
-                    <button
-                      key={key}
-                      onClick={() => setListFilter(key)}
-                      className={`px-3 py-1 text-xs sm:text-sm font-semibold rounded-full transition-all duration-300 ${listFilter === key ? 'bg-white dark:bg-slate-700 shadow-md' : 'text-slate-500'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTrip?.id || null} userId={user.uid} />
-              </>
-            )}
-            {view === 'calendar' && <CalendarView trips={trips} />}
-            {view === 'costs' && <CostSummary trips={trips} />}
-        </main>
-        
-        <div className="fixed bottom-6 right-6 z-40">
-            {isFabMenuOpen && (
-                <div className="flex flex-col items-center space-y-3 mb-3">
-                    <button onClick={() => fabAction('quick')} className="group flex items-center space-x-2" aria-label="Agregar viaje manualmente">
-                        <span className="bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold px-3 py-1 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">Manual</span>
-                        <div className="w-14 h-14 rounded-full bg-sky-500 text-white flex items-center justify-center shadow-lg hover:bg-sky-600 transition-all transform hover:scale-110">
-                            <PencilSquareIcon className="w-7 h-7" />
-                        </div>
-                    </button>
-                    <button onClick={() => fabAction('ai')} className="group flex items-center space-x-2" aria-label="Agregar viaje con IA">
-                         <span className="bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold px-3 py-1 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">Con IA</span>
-                        <div className="w-14 h-14 rounded-full bg-teal-500 text-white flex items-center justify-center shadow-lg hover:bg-teal-600 transition-all transform hover:scale-110">
-                            <MailIcon className="w-7 h-7" />
-                        </div>
-                    </button>
-                </div>
-            )}
-            <button
-                onClick={() => setIsFabMenuOpen(!isFabMenuOpen)}
-                className={`w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-2xl transform transition-transform duration-300 ease-in-out ${isFabMenuOpen ? 'rotate-45' : ''}`}
-                aria-haspopup="true"
-                aria-expanded={isFabMenuOpen}
-                aria-label="Agregar nuevo viaje"
-            >
-                <PlusCircleIcon className="w-9 h-9" />
-            </button>
-        </div>
-    </div>
-  );
 };
 
 export default App;

@@ -11,15 +11,7 @@
         darkMode: 'class',
         theme: {
           extend: {
-            boxShadow: {
-              // Neumorfismo para modo claro
-              'neumo-light-out': '5px 5px 10px #b8b9be, -5px -5px 10px #ffffff',
-              'neumo-light-in': 'inset 5px 5px 10px #b8b9be, inset -5px -5px 10px #ffffff',
-              
-              // Neumorfismo para modo oscuro
-              'neumo-dark-out': '5px 5px 10px #1a202c, -5px -5px 10px #2d3748',
-              'neumo-dark-in': 'inset 5px 5px 10px #1a202c, inset -5px -5px 10px #2d3748',
-            },
+            // Se eliminaron las sombras de neumorfismo para adoptar un nuevo estilo de diseño.
           },
         },
       }
@@ -55,7 +47,7 @@
 }
 </script>
 </head>
-  <body class="bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 text-slate-800 dark:text-slate-200 min-h-screen">
+  <body class="bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-800 text-slate-800 dark:text-slate-200 min-h-screen">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
