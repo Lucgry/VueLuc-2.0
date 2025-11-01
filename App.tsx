@@ -25,8 +25,6 @@ import { FullScreenLoader } from './components/Spinner';
 import { BoltIcon } from './components/icons/BoltIcon';
 import { InformationCircleIcon } from './components/icons/InformationCircleIcon';
 import { ClockIcon } from './components/icons/ClockIcon';
-import { FunnelIcon } from './components/icons/FunnelIcon';
-import { ChevronDownIcon } from './components/icons/ChevronDownIcon';
 
 // A type guard for BeforeInstallPromptEvent
 interface BeforeInstallPromptEvent extends Event {
@@ -41,6 +39,12 @@ interface BeforeInstallPromptEvent extends Event {
 type View = 'list' | 'calendar' | 'costs';
 type ListFilter = 'future' | 'completed' | 'currentMonth' | 'all';
 
+const filterOptions: { key: ListFilter; label: string }[] = [
+  { key: 'future', label: 'Futuros' },
+  { key: 'currentMonth', label: 'Este Mes' },
+  { key: 'completed', label: 'Completados' },
+  { key: 'all', label: 'Todos' },
+];
 
 const getTripStartDate = (trip: Trip): Date | null => {
     const dateStr = trip.departureFlight?.departureDateTime || trip.returnFlight?.departureDateTime;
@@ -438,39 +442,38 @@ const App: React.FC = () => {
           )}
 
           <div className="flex justify-center space-x-2 mb-6 p-1 bg-slate-100 dark:bg-slate-800 rounded-full shadow-neumo-light-in dark:shadow-neumo-dark-in">
-            <button onClick={() => setView('list')} className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all flex items-center space-x-2 ${view === 'list' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'}`}>
-                <ListBulletIcon className="w-5 h-5" /> <span>Lista</span>
+            <button onClick={() => setView('list')} className={`py-2 rounded-full text-sm font-semibold transition-all flex items-center justify-center ${view === 'list' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'} w-14 sm:w-auto sm:px-4`}>
+                <ListBulletIcon className="w-5 h-5" />
+                <span className="hidden sm:inline sm:ml-2">Lista</span>
             </button>
-            <button onClick={() => setView('calendar')} className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all flex items-center space-x-2 ${view === 'calendar' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'}`}>
-                <CalendarDaysIcon className="w-5 h-5" /> <span>Calendario</span>
+            <button onClick={() => setView('calendar')} className={`py-2 rounded-full text-sm font-semibold transition-all flex items-center justify-center ${view === 'calendar' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'} w-14 sm:w-auto sm:px-4`}>
+                <CalendarDaysIcon className="w-5 h-5" />
+                <span className="hidden sm:inline sm:ml-2">Calendario</span>
             </button>
-            <button onClick={() => setView('costs')} className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all flex items-center space-x-2 ${view === 'costs' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'}`}>
-                <CalculatorIcon className="w-5 h-5" /> <span>Costos</span>
+            <button onClick={() => setView('costs')} className={`py-2 rounded-full text-sm font-semibold transition-all flex items-center justify-center ${view === 'costs' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'} w-14 sm:w-auto sm:px-4`}>
+                <CalculatorIcon className="w-5 h-5" />
+                <span className="hidden sm:inline sm:ml-2">Costos</span>
             </button>
           </div>
 
           {view === 'list' && (
             <>
               <div className="mb-6 flex justify-center">
-                  <div className="relative inline-flex items-center bg-slate-100 dark:bg-slate-800 rounded-full shadow-neumo-light-out dark:shadow-neumo-dark-out">
-                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                          <FunnelIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
-                      </div>
-                      <select
-                          value={listFilter}
-                          onChange={(e) => setListFilter(e.target.value as ListFilter)}
-                          className="w-full appearance-none rounded-full border-none bg-transparent py-2.5 pl-11 pr-10 text-sm font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
-                          aria-label="Filtrar viajes"
-                      >
-                          <option value="future">Futuros</option>
-                          <option value="currentMonth">Este Mes</option>
-                          <option value="completed">Completados</option>
-                          <option value="all">Todos</option>
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
-                          <ChevronDownIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
-                      </div>
-                  </div>
+                <div className="flex space-x-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-full shadow-neumo-light-in dark:shadow-neumo-dark-in overflow-x-auto">
+                  {filterOptions.map((option) => (
+                    <button
+                      key={option.key}
+                      onClick={() => setListFilter(option.key)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+                        listFilter === option.key
+                          ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out'
+                          : 'text-slate-500'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <TripList
                 trips={filteredTrips}
