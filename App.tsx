@@ -25,6 +25,10 @@ import { FullScreenLoader } from './components/Spinner';
 import { BoltIcon } from './components/icons/BoltIcon';
 import { InformationCircleIcon } from './components/icons/InformationCircleIcon';
 import { ClockIcon } from './components/icons/ClockIcon';
+import { ArrowUpRightIcon } from './components/icons/ArrowUpRightIcon';
+import { CalendarClockIcon } from './components/icons/CalendarClockIcon';
+import { CheckBadgeIcon } from './components/icons/CheckBadgeIcon';
+import { BriefcaseIcon } from './components/icons/BriefcaseIcon';
 
 // A type guard for BeforeInstallPromptEvent
 interface BeforeInstallPromptEvent extends Event {
@@ -398,7 +402,13 @@ const App: React.FC = () => {
     setIsFabMenuOpen(false);
   };
   
-// FIX: Add conditional rendering logic and return statement for the component.
+  const filterIcons: { [key in ListFilter]: React.ReactNode } = {
+    future: <ArrowUpRightIcon className="w-5 h-5" />,
+    currentMonth: <CalendarClockIcon className="w-5 h-5" />,
+    completed: <CheckBadgeIcon className="w-5 h-5" />,
+    all: <BriefcaseIcon className="w-5 h-5" />,
+  };
+  
   if (loadingAuth) {
     return <FullScreenLoader />;
   }
@@ -459,18 +469,20 @@ const App: React.FC = () => {
           {view === 'list' && (
             <>
               <div className="mb-6 flex justify-center">
-                <div className="flex space-x-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-full shadow-neumo-light-in dark:shadow-neumo-dark-in overflow-x-auto">
+                <div className="flex space-x-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-full shadow-neumo-light-in dark:shadow-neumo-dark-in">
                   {filterOptions.map((option) => (
                     <button
                       key={option.key}
                       onClick={() => setListFilter(option.key)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+                      className={`rounded-full transition-all flex items-center justify-center ${
                         listFilter === option.key
                           ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out'
                           : 'text-slate-500'
-                      }`}
+                      } w-12 h-12 sm:w-auto sm:h-auto sm:px-4 sm:py-1.5`}
+                      aria-label={option.label}
                     >
-                      {option.label}
+                      {filterIcons[option.key]}
+                      <span className="hidden sm:inline sm:ml-2 text-xs font-semibold whitespace-nowrap">{option.label}</span>
                     </button>
                   ))}
                 </div>
@@ -526,5 +538,4 @@ const App: React.FC = () => {
   );
 };
 
-// FIX: Add default export to the App component.
 export default App;
