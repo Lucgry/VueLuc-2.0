@@ -121,6 +121,36 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
     const fileInputRef = useRef<HTMLInputElement>(null);
     const flightTypeToUpload = useRef<'ida' | 'vuelta' | null>(null);
 
+    const idaFlight = trip.departureFlight;
+    const vueltaFlight = trip.returnFlight;
+
+    const getStatus = () => {
+        if (isPast) return { 
+            type: 'bar' as const,
+            text: 'Completado', 
+            Icon: CheckCircleIcon, 
+            barClass: 'bg-green-100 dark:bg-green-500/20', 
+            textClass: 'text-green-800 dark:text-green-200 font-semibold',
+            iconColor: 'text-green-600 dark:text-green-300'
+        };
+        if (isNext) return { 
+            type: 'bar' as const,
+            text: 'Próximo Viaje', 
+            Icon: StarIcon, 
+            barClass: 'bg-amber-100 dark:bg-amber-500/20',
+            textClass: 'text-amber-800 dark:text-amber-200 font-semibold',
+            iconColor: 'text-amber-600 dark:text-amber-400'
+        };
+        if (!idaFlight || !vueltaFlight) return { 
+            type: 'pill' as const,
+            text: 'Tramo único', 
+            Icon: ExclamationTriangleIcon, 
+            color: 'text-orange-800 dark:text-orange-200', 
+            bg: 'bg-orange-100 dark:bg-orange-500/20' 
+        };
+        return null;
+    }
+
     useEffect(() => {
         if (isExpanded) {
             setPassStatus({ ida: 'loading', vuelta: 'loading' });
@@ -133,7 +163,6 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                     setPassStatus({ ida: idaResult.exists, vuelta: vueltaResult.exists });
                 } catch (error) {
                     console.error("Error checking for boarding passes, likely a permissions issue:", error);
-                    // If we can't check, assume they don't exist so the user can try to upload.
                     setPassStatus({ ida: false, vuelta: false });
                 }
             };
@@ -254,20 +283,11 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
         );
     };
 
-
-    const idaFlight = trip.departureFlight;
-    const vueltaFlight = trip.returnFlight;
+    const status = getStatus();
+    
     const idaDate = idaFlight?.departureDateTime;
     const vueltaDate = vueltaFlight?.departureDateTime;
     const tripDate = idaDate || vueltaDate;
-
-    const getStatus = () => {
-        if (isPast) return { text: 'Completado', Icon: CheckCircleIcon, color: 'text-green-400', bg: 'bg-green-900/50' };
-        if (isNext) return { text: 'Próximo Viaje', Icon: StarIcon, color: 'text-amber-300', bg: 'bg-amber-900/50' };
-        if (!idaFlight || !vueltaFlight) return { text: 'Tramo único', Icon: ExclamationTriangleIcon, color: 'text-orange-400', bg: 'bg-orange-900/50' };
-        return null;
-    }
-    const status = getStatus();
     
     const idaAirline = trip.departureFlight?.airline;
     const vueltaAirline = trip.returnFlight?.airline;
@@ -311,7 +331,6 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
             text += '🛬 VUELTA:\n';
             text += `${returnFlight.airline || ''} (Vuelo ${returnFlight.flightNumber || ''})\n`;
             text += `🗓️ ${formatDate(returnFlight.departureDateTime)}\n`;
-            // FIX: Corrected property name from departureCode to departureAirportCode.
             text += `Sale ${returnFlight.departureCity} (${returnFlight.departureAirportCode}) a las ${formatTime(returnFlight.departureDateTime)} hs\n`;
             text += `Llega ${returnFlight.arrivalCity} (${returnFlight.arrivalAirportCode}) a las ${formatTime(returnFlight.arrivalDateTime)} hs\n`;
         }
@@ -367,12 +386,12 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                 }}
             />
         )}
-        <div className={`relative bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-xl transition-all duration-300 border border-slate-200 dark:border-slate-700/50 shadow-sm ${isPast ? 'opacity-60 hover:opacity-100' : ''} ${isNext ? 'next-trip-glow' : ''}`}>
+        <div className={`relative bg-white dark:bg-slate-800 backdrop-blur-md rounded-xl transition-all duration-300 border border-slate-200 dark:border-slate-700 shadow-lg ${isPast ? 'opacity-70 hover:opacity-100' : ''} ${isNext ? 'next-trip-glow' : ''} overflow-hidden`}>
              <div 
                 className="p-4 cursor-pointer"
                 onClick={() => setIsExpanded(!isExpanded)}
             >
-                <div className="flex flex-col space-y-1.5">
+                <div className="flex flex-col space-y-2">
                     {/* --- Row 1: Date & Time --- */}
                     <div className="flex justify-between items-start">
                         <div className="font-bold text-lg text-slate-800 dark:text-slate-200 capitalize">
@@ -404,8 +423,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                         </div>
                     </div>
 
-                    {/* --- Row 3: Status --- */}
-                    {status && (
+                     {status && status.type === 'pill' && (
                          <div className={`inline-flex items-center space-x-1.5 text-xs font-semibold px-2 py-1 rounded-full ${status.color} ${status.bg}`}>
                             <status.Icon className="h-4 w-4" />
                             <span>{status.text}</span>
@@ -413,6 +431,19 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                     )}
                 </div>
             </div>
+
+            {status && status.type === 'bar' && !isExpanded && (
+                <div 
+                    className={`px-4 py-2 cursor-pointer ${status.barClass}`}
+                    onClick={() => setIsExpanded(!isExpanded)}
+                >
+                    <div className={`flex items-center space-x-1.5 text-sm ${status.textClass}`}>
+                        <status.Icon className={`h-5 w-5 ${status.iconColor}`} />
+                        <span>{status.text}</span>
+                    </div>
+                </div>
+            )}
+
 
             <div className={`transition-[max-height] duration-500 ease-in-out overflow-hidden ${isExpanded ? 'max-h-[800px]' : 'max-h-0'}`}>
                 <div className="px-4 pb-4">
@@ -469,6 +500,14 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                         </div>
                     </div>
                 </div>
+                 {status && status.type === 'bar' && isExpanded && (
+                    <div className={`px-4 py-2 ${status.barClass}`}>
+                        <div className={`flex items-center space-x-1.5 text-sm ${status.textClass}`}>
+                            <status.Icon className={`h-5 w-5 ${status.iconColor}`} />
+                            <span>{status.text}</span>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
         </>
