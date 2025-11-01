@@ -28,7 +28,7 @@ const tripSchema = {
       items: flightSchema,
     },
     bookingReference: { type: Type.STRING, description: "Código de reserva o localizador." },
-    purchaseDate: { type: Type.STRING, description: "La fecha en que se realizó la compra o se emitió la confirmación del viaje, extraída del correo. Debe estar en formato ISO 8601 'YYYY-MM-DDTHH:mm:ss'. Si no se encuentra explícitamente, usa la fecha de salida del primer vuelo como la fecha de compra." },
+    purchaseDate: { type: Type.STRING, description: "La fecha de COMPRA o EMISIÓN del viaje, extraída del correo. Busca frases como 'Fecha de compra' o 'Emitido el'. Debe estar en formato ISO 8601 'YYYY-MM-DDTHH:mm:ss'. Si no se encuentra explícitamente, el modelo usará la fecha de salida del primer vuelo como fallback." },
   },
   required: ["bookingReference", "flights", "purchaseDate"]
 };
@@ -54,7 +54,7 @@ export const parseFlightEmail = async (apiKey: string, emailText: string, pdfBas
     1.  TAREA PRINCIPAL: Extrae CADA VUELO que encuentres en el email y colócalo como un objeto dentro de la lista 'flights' del JSON.
     2.  REGLA DE ORO: NO INVENTES VUELOS. Si el email contiene solo UN vuelo, la lista 'flights' DEBE contener solo UN objeto. Si el email contiene dos vuelos (ida y vuelta), la lista 'flights' debe contener DOS objetos.
     3.  COSTO: El costo total del viaje debe ser asignado al campo 'cost' del PRIMER vuelo en la lista 'flights'.
-    4.  FECHA DE COMPRA: Es CRÍTICO que extraigas la fecha en que se realizó la compra o se emitió la confirmación del viaje. Asígnala al campo 'purchaseDate'. Si el email no menciona explícitamente una fecha de compra o emisión, DEBES usar la fecha de salida del primer vuelo como el valor para 'purchaseDate'.
+    4.  FECHA DE COMPRA (purchaseDate): Este campo es CRÍTICO. Debes encontrar la fecha en que se realizó la compra o se emitió la confirmación. Busca atentamente frases como "Fecha de compra:", "Fecha de emisión:", "Emitido el:", o una fecha que esté claramente asociada con la transacción y no con el vuelo en sí (a menudo se encuentra en la parte superior o inferior del correo). Si después de una búsqueda exhaustiva no encuentras una fecha de compra explícita, y solo en ese caso, DEBES usar la fecha de salida del primer vuelo listado como el valor para 'purchaseDate'.
 
     FORMATO DE FECHA:
     - Debes convertir SIEMPRE las fechas y horas al formato estricto ISO 8601: 'YYYY-MM-DDTHH:mm:ss'.

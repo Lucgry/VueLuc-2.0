@@ -206,8 +206,6 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
             <h3 className="text-xl font-bold mb-4">Desglose Mensual</h3>
             <div className="space-y-3">
                 {monthlyBreakdown.map(({ name, cost }) => {
-                    if (cost === 0 && tripsForSelectedYear.length > 0) return null;
-
                     const widthPercentage = maxMonthlyCost > 0 ? (cost / maxMonthlyCost) * 100 : 0;
 
                     return (
