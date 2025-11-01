@@ -3,9 +3,10 @@ import { auth, googleProvider, projectId } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { GoogleIcon } from './icons/GoogleIcon';
 import { BoltIcon } from './icons/BoltIcon';
+import { InformationCircleIcon } from './icons/InformationCircleIcon';
 
 const LoginScreen: React.FC = () => {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; link?: { url: string; text: string; } } | null>(null);
 
   const handleGoogleSignIn = async () => {
     setError(null);
@@ -19,40 +20,22 @@ const LoginScreen: React.FC = () => {
       const errorMessage = err.message || '';
       const errorCode = err.code || '';
 
-      const startMarker = 'requests-from-referer-https://';
-      const endMarker = '-are-blocked';
-      
-      if (errorMessage.includes('API_KEY_HTTP_REFERRER_BLOCKED') || errorMessage.includes('referer')) {
-          const authLink = `https://console.cloud.google.com/apis/credentials?project=${projectId}`;
-          setError(
-              `Tu clave de API está bloqueando este sitio web. Debes autorizar el dominio en la configuración de la clave.\n\n`+
-              `1. Ve a tus Credenciales de Google Cloud (puedes usar el enlace que aparece en otros errores de la app o buscarlo manualmente).\n` +
-              `2. Busca la clave que estás usando.\n` +
-              `3. En la sección "Restricciones de la aplicación", selecciona "Sitios web" y en "Restricciones de sitios web", haz clic en "Añadir".\n` +
-              `4. Pega esta URL: ${window.location.origin}\n\n`+
-              `Guarda los cambios y el inicio de sesión funcionará.`
-          );
-      } else if (errorCode === 'auth/unauthorized-domain' || errorMessage.includes(startMarker)) {
-        let domainToAuthorize = '';
-        const startIndex = errorMessage.indexOf(startMarker);
-        const endIndex = errorMessage.indexOf(endMarker);
-
-        if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-            const startPos = startIndex + startMarker.length;
-            domainToAuthorize = errorMessage.substring(startPos, endIndex);
-        }
-        
-        if (domainToAuthorize) {
-            setError(`El dominio no está autorizado. Por favor, agrega el siguiente dominio a la lista de "Dominios autorizados" en tu configuración de Firebase Authentication y vuelve a intentarlo: ${domainToAuthorize}`);
-        } else {
-            // Fallback en caso de que el mensaje de error cambie de formato
-            setError('El dominio de esta aplicación no está autorizado. Revisa la consola de desarrollo para identificar el dominio exacto y agrégalo a la lista de "Dominios autorizados" en tu configuración de Firebase Authentication.');
-        }
-
+      if (errorMessage.includes('API_KEY_HTTP_REFERRER_BLOCKED') || errorMessage.includes('requests-from-referer')) {
+          setError({
+              message: "Tu clave de API de Google Cloud está bloqueando las solicitudes de este sitio web. Para solucionarlo, debes autorizar este dominio en la configuración de tu clave de API.",
+              link: {
+                  url: `https://console.cloud.google.com/apis/credentials?project=${projectId}`,
+                  text: 'Abrir configuración de credenciales'
+              }
+          });
+      } else if (errorCode === 'auth/unauthorized-domain') {
+        setError({
+            message: `El dominio de esta aplicación no está autorizado para el inicio de sesión. Por favor, ve a la configuración de Autenticación de Firebase y agrega "${window.location.hostname}" a la lista de dominios autorizados.`
+        });
       } else if (errorCode === 'auth/popup-closed-by-user') {
-          setError('Cancelaste el inicio de sesión.');
+          // No es un error crítico, no mostramos nada.
       } else {
-          setError("No se pudo iniciar sesión. Revisa la consola para ver el error detallado.");
+          setError({ message: "No se pudo iniciar sesión. Revisa la consola para ver el error detallado y asegúrate de que tu configuración de Firebase es correcta."});
       }
     }
   };
@@ -69,9 +52,32 @@ const LoginScreen: React.FC = () => {
         </p>
 
         {error && (
-            <div className="mt-6 p-3 bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200 rounded-lg text-sm text-left shadow-neumo-light-in dark:shadow-neumo-dark-in">
-                <p className="font-semibold">Error de inicio de sesión</p>
-                <p className="mt-1 break-words whitespace-pre-wrap">{error}</p>
+            <div className="mt-6 p-4 rounded-lg bg-red-100/50 dark:bg-red-900/20 text-left flex items-start space-x-3 shadow-neumo-light-in dark:shadow-neumo-dark-in">
+                <div className="flex-shrink-0 mt-0.5">
+                    <InformationCircleIcon className="w-5 h-5 text-red-600 dark:text-red-300" />
+                </div>
+                <div>
+                    <h4 className="font-semibold text-red-800 dark:text-red-200">Acción Requerida:</h4>
+                    <p className="text-sm text-red-700 dark:text-red-300 mt-1 whitespace-pre-wrap">
+                        {error.message}
+                    </p>
+                    {error.link && (
+                       <div className="mt-4">
+                           <a 
+                                href={error.link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-block w-full px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm text-center"
+                            >
+                                {error.link.text} &rarr;
+                            </a>
+                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                En "Restricciones de sitios web", haz clic en "Añadir" y pega esta URL: <br/>
+                                <strong className="select-all break-all">{window.location.origin}</strong>
+                           </p>
+                       </div>
+                    )}
+                </div>
             </div>
         )}
 
