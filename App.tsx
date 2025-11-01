@@ -146,15 +146,19 @@ const App: React.FC = () => {
             const errorMessage = error.message || '';
             if (error.code === 'auth/network-request-failed' || errorMessage.includes('403') || errorMessage.includes('securetoken')) {
               setAuthRuntimeError({
-                message: `Tu inicio de sesión funciona, pero la app no puede verificar la sesión de forma segura. Esto casi siempre significa que un servicio requerido no está habilitado en tu proyecto de la nube.\n\nPor favor, haz clic en el primer botón para activarlo. Si el problema persiste, revisa las restricciones de tu API key.`,
+                message: `Tu inicio de sesión funciona, pero la app no puede mantener la sesión segura. Esto suele ocurrir porque una API necesaria no está habilitada en tu proyecto o no está incluida en las restricciones de tu clave de API.\n\nPor favor, sigue estos pasos en orden. Después de habilitar las APIs en los pasos 1 y 2, ve al paso 3 y asegúrate de que AMBAS APIs ("Identity Toolkit" y "Security Token Service") estén seleccionadas en la lista de APIs permitidas para tu clave.`,
                 links: [
                     {
                         url: `https://console.cloud.google.com/apis/library/identitytoolkit.googleapis.com?project=${projectId}`,
                         text: '1. Habilitar API de Autenticación (Identity Toolkit)'
                     },
                     {
+                        url: `https://console.cloud.google.com/apis/library/sts.googleapis.com?project=${projectId}`,
+                        text: '2. Habilitar API de Servicio de Tokens (STS)'
+                    },
+                    {
                         url: `https://console.cloud.google.com/apis/credentials?project=${projectId}`,
-                        text: '2. Revisar Restricciones de API Key'
+                        text: '3. Revisar Restricciones de API Key'
                     }
                 ]
               });
