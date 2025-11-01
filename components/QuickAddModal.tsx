@@ -5,7 +5,7 @@ import { Spinner } from './Spinner';
 
 interface QuickAddModalProps {
   onClose: () => void;
-  onAddTrip: (newTrip: Omit<Trip, 'id' | 'createdAt'>) => void;
+  onAddTrip: (newTrip: Omit<Trip, 'id' | 'createdAt'>) => Promise<void>;
 }
 
 const getNextDayOfWeek = (dayOfWeek: number): Date => { // 0=Sun, 1=Mon, ..., 6=Sat
@@ -107,7 +107,7 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         setIsLoading(true);
@@ -137,31 +137,28 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
                 paymentMethod: data.paymentMethod
             };
         };
-
-        const departureFlight = createFlightObject(idaData);
-        const returnFlight = createFlightObject(vueltaData);
         
-        if (!bookingRef.trim()) {
-            setError('El código de reserva es obligatorio.');
-            setIsLoading(false);
-            return;
-        }
-
-        if (!departureFlight && !returnFlight) {
-            setError('Debes completar los datos de al menos un tramo (ida o vuelta).');
-            setIsLoading(false);
-            return;
-        }
-
         try {
+            const departureFlight = createFlightObject(idaData);
+            const returnFlight = createFlightObject(vueltaData);
+            
+            if (!bookingRef.trim()) {
+                throw new Error('El código de reserva es obligatorio.');
+            }
+
+            if (!departureFlight && !returnFlight) {
+                throw new Error('Debes completar los datos de al menos un tramo (ida o vuelta).');
+            }
+
             const newTrip: Omit<Trip, 'id' | 'createdAt'> = {
                 departureFlight,
                 returnFlight,
                 bookingReference: bookingRef.toUpperCase(),
             };
-            onAddTrip(newTrip);
+            await onAddTrip(newTrip);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Error al crear el viaje.');
+        } finally {
             setIsLoading(false);
         }
     };

@@ -6,7 +6,7 @@ import { MailIcon } from './icons/MailIcon';
 
 interface EmailImporterProps {
   onClose: () => void;
-  onAddTrip: (newTrip: Omit<Trip, 'id' | 'createdAt'>) => void;
+  onAddTrip: (newTrip: Omit<Trip, 'id' | 'createdAt'>) => Promise<void>;
   apiKey: string;
   onInvalidApiKey: () => void;
 }
@@ -43,7 +43,7 @@ const EmailImporter: React.FC<EmailImporterProps> = ({ onClose, onAddTrip, apiKe
         pdfBase64 = await fileToBase64(pdfFile);
       }
       const newTrip = await parseFlightEmail(apiKey, emailText, pdfBase64);
-      onAddTrip(newTrip);
+      await onAddTrip(newTrip);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ocurrió un error inesperado.';
       if (message.includes('La API Key no es válida')) {

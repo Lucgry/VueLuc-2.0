@@ -307,7 +307,41 @@ const App: React.FC = () => {
   }
 
   const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
-    if (!user || !db) return;
+    if (!user || !db) throw new Error("Usuario no autenticado.");
+
+    const getDuplicateFlightError = (flightToCheck: Flight | null, allTrips: Trip[]): string | null => {
+        if (!flightToCheck?.flightNumber || !flightToCheck.departureDateTime || !flightToCheck.departureAirportCode) {
+            return null;
+        }
+        
+        const normalize = (str: string) => str.toUpperCase().trim();
+        const newFlightNum = normalize(flightToCheck.flightNumber);
+        const newDepDate = flightToCheck.departureDateTime.split('T')[0];
+        const newDepAirport = normalize(flightToCheck.departureAirportCode);
+
+        for (const existingTrip of allTrips) {
+            for (const existingFlight of [existingTrip.departureFlight, existingTrip.returnFlight]) {
+                if (existingFlight?.flightNumber && existingFlight.departureDateTime && existingFlight.departureAirportCode) {
+                    if (
+                        normalize(existingFlight.flightNumber) === newFlightNum &&
+                        existingFlight.departureDateTime.split('T')[0] === newDepDate &&
+                        normalize(existingFlight.departureAirportCode) === newDepAirport
+                    ) {
+                        const formattedDate = new Date(newDepDate + 'T12:00:00Z').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+                        return `Vuelo duplicado: El vuelo ${newFlightNum} del ${formattedDate} ya existe.`;
+                    }
+                }
+            }
+        }
+        return null;
+    };
+
+    const idaError = getDuplicateFlightError(newTripData.departureFlight, trips);
+    if (idaError) throw new Error(idaError);
+
+    const vueltaError = getDuplicateFlightError(newTripData.returnFlight, trips);
+    if (vueltaError) throw new Error(vueltaError);
+
     try {
       const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
       await addDoc(tripsCollectionRef, {
@@ -318,7 +352,7 @@ const App: React.FC = () => {
       setIsQuickAddModalOpen(false);
     } catch (error) {
       console.error("Error adding trip to Firestore:", error);
-      alert('No se pudo agregar el viaje. Por favor, intenta de nuevo.');
+      throw new Error('No se pudo guardar el viaje en la base de datos. Inténtalo de nuevo.');
     }
   };
 
