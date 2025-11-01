@@ -108,28 +108,37 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
             .sort((a, b) => b.total - a.total);
     }, [tripsForSelectedYear]);
     
-    const monthlyCosts = useMemo(() => {
-        const costs = Array(12).fill(0);
-        tripsForSelectedYear.forEach(trip => {
-            const purchaseDate = (trip.purchaseDate || trip.createdAt) ? new Date(trip.purchaseDate || trip.createdAt) : null;
+    const monthlyBreakdown = useMemo(() => {
+        const costsByMonth: { [monthIndex: number]: number } = {};
 
-            if (purchaseDate) {
-                const month = purchaseDate.getMonth();
-                const idaCost = trip.departureFlight?.cost || 0;
-                const vueltaCost = trip.returnFlight?.cost || 0;
-                const totalTripCost = idaCost + vueltaCost;
+        for (const trip of tripsForSelectedYear) {
+            // Regla de negocio: La fecha que rige el gasto es la fecha de compra del pasaje.
+            const costDateStr = trip.purchaseDate || trip.createdAt;
+            if (!costDateStr) continue;
 
-                if (totalTripCost > 0) {
-                    costs[month] += totalTripCost;
-                }
+            const purchaseDate = new Date(costDateStr);
+            const monthIndex = purchaseDate.getMonth(); // 0 para Enero, 11 para Diciembre
+            if (isNaN(monthIndex)) continue;
+            
+            // Suma el costo total del viaje
+            const totalTripCost = (trip.departureFlight?.cost || 0) + (trip.returnFlight?.cost || 0);
+
+            // Acumula el costo en el mes correspondiente a la compra.
+            if (totalTripCost > 0) {
+                costsByMonth[monthIndex] = (costsByMonth[monthIndex] || 0) + totalTripCost;
             }
-        });
-        return costs;
+        }
+        
+        const allMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+        
+        return allMonths.map((name, index) => ({
+            name,
+            cost: costsByMonth[index] || 0,
+        }));
     }, [tripsForSelectedYear]);
 
+    const maxMonthlyCost = Math.max(...monthlyBreakdown.map(m => m.cost), 1); // Avoid division by zero
 
-    const maxMonthlyCost = Math.max(...monthlyCosts, 1); // Avoid division by zero
-    const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
     if (trips.length === 0) {
         return (
@@ -196,17 +205,16 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
         )}
 
         <div>
-            <h3 className="text-xl font-bold mb-4">Desglose Mensual</h3>
+            <h3 className="text-xl font-bold mb-4">Desglose Mensual (por Fecha de Compra)</h3>
             <div className="space-y-3">
-                {months.map((month, index) => {
-                    const cost = monthlyCosts[index];
+                {monthlyBreakdown.map(({ name, cost }) => {
                     if (cost === 0 && tripsForSelectedYear.length > 0) return null;
 
                     const widthPercentage = maxMonthlyCost > 0 ? (cost / maxMonthlyCost) * 100 : 0;
 
                     return (
-                        <div key={month} className="flex items-center gap-3 sm:gap-4 text-sm">
-                            <span className="font-semibold text-slate-600 dark:text-slate-400 w-10 text-right">{month}</span>
+                        <div key={name} className="flex items-center gap-3 sm:gap-4 text-sm">
+                            <span className="font-semibold text-slate-600 dark:text-slate-400 w-10 text-right">{name}</span>
                             <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-3 shadow-neumo-light-in dark:shadow-neumo-dark-in">
                                 <div
                                     className="bg-gradient-to-r from-indigo-500 to-teal-500 h-3 rounded-full transition-all duration-500 ease-out"
