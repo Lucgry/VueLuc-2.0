@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { auth, googleProvider } from '../firebase';
+import { auth, googleProvider, projectId } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { GoogleIcon } from './icons/GoogleIcon';
 import { BoltIcon } from './icons/BoltIcon';
@@ -22,7 +22,17 @@ const LoginScreen: React.FC = () => {
       const startMarker = 'requests-from-referer-https://';
       const endMarker = '-are-blocked';
       
-      if (errorCode === 'auth/unauthorized-domain' || errorMessage.includes(startMarker)) {
+      if (errorMessage.includes('API_KEY_HTTP_REFERRER_BLOCKED') || errorMessage.includes('referer')) {
+          const authLink = `https://console.cloud.google.com/apis/credentials?project=${projectId}`;
+          setError(
+              `Tu clave de API está bloqueando este sitio web. Debes autorizar el dominio en la configuración de la clave.\n\n`+
+              `1. Ve a tus Credenciales de Google Cloud (puedes usar el enlace que aparece en otros errores de la app o buscarlo manualmente).\n` +
+              `2. Busca la clave que estás usando.\n` +
+              `3. En la sección "Restricciones de la aplicación", selecciona "Sitios web" y en "Restricciones de sitios web", haz clic en "Añadir".\n` +
+              `4. Pega esta URL: ${window.location.origin}\n\n`+
+              `Guarda los cambios y el inicio de sesión funcionará.`
+          );
+      } else if (errorCode === 'auth/unauthorized-domain' || errorMessage.includes(startMarker)) {
         let domainToAuthorize = '';
         const startIndex = errorMessage.indexOf(startMarker);
         const endIndex = errorMessage.indexOf(endMarker);
@@ -61,7 +71,7 @@ const LoginScreen: React.FC = () => {
         {error && (
             <div className="mt-6 p-3 bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200 rounded-lg text-sm text-left shadow-neumo-light-in dark:shadow-neumo-dark-in">
                 <p className="font-semibold">Error de inicio de sesión</p>
-                <p className="mt-1 break-words">{error}</p>
+                <p className="mt-1 break-words whitespace-pre-wrap">{error}</p>
             </div>
         )}
 
