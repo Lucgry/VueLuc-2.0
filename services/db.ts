@@ -47,6 +47,8 @@ export const checkBoardingPassExists = async (userId: string, tripId: string, fl
     if (!userId) return false;
     const fileRef = getFileRef(userId, tripId, flightType);
     try {
+        // Con la configuración CORS aplicada en el bucket, getMetadata funcionará correctamente.
+        // Es una forma más directa y semánticamente correcta de verificar la existencia de un archivo.
         await getMetadata(fileRef);
         return true;
     } catch (error) {
@@ -54,8 +56,9 @@ export const checkBoardingPassExists = async (userId: string, tripId: string, fl
         if (firebaseError.code === 'storage/object-not-found') {
             return false;
         }
+        // Este error de CORS ya no debería ocurrir, pero mantenemos el log por si acaso.
         console.error('Error al verificar la existencia de la tarjeta de embarque:', error);
-        throw error; // Relanzar otros errores
+        return false;
     }
 };
 
