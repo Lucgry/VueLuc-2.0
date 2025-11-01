@@ -106,11 +106,12 @@ interface TripCardProps {
   onDelete: () => void;
   isPast: boolean;
   isNext: boolean;
+  userId: string;
 }
 
 type DeletionState = 'idle' | 'confirming' | 'deleting';
 
-const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) => {
+const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, userId }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [copied, setCopied] = useState(false);
     const [passStatus, setPassStatus] = useState({ ida: false, vuelta: false });
@@ -124,14 +125,14 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
         if (isExpanded) {
             const checkPasses = async () => {
                 const [idaExists, vueltaExists] = await Promise.all([
-                    checkBoardingPassExists(trip.id, 'ida'),
-                    checkBoardingPassExists(trip.id, 'vuelta'),
+                    checkBoardingPassExists(userId, trip.id, 'ida'),
+                    checkBoardingPassExists(userId, trip.id, 'vuelta'),
                 ]);
                 setPassStatus({ ida: idaExists, vuelta: vueltaExists });
             };
             checkPasses();
         }
-    }, [trip.id, isExpanded]);
+    }, [trip.id, isExpanded, userId]);
 
     const handleAddBoardingPassClick = (e: React.MouseEvent, flightType: 'ida' | 'vuelta') => {
         e.stopPropagation();
@@ -144,7 +145,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
         const flightType = flightTypeToUpload.current;
         if (file && flightType) {
             try {
-                await saveBoardingPass(trip.id, flightType, file);
+                await saveBoardingPass(userId, trip.id, flightType, file);
                 setPassStatus(prev => ({ ...prev, [flightType]: true }));
             } catch (error) {
                 console.error("Error saving boarding pass:", error);
@@ -157,7 +158,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
     const handleViewBoardingPass = async (e: React.MouseEvent, flightType: 'ida' | 'vuelta') => {
         e.stopPropagation();
         try {
-            const file = await getBoardingPass(trip.id, flightType);
+            const file = await getBoardingPass(userId, trip.id, flightType);
             if (file) {
                 const url = URL.createObjectURL(file);
                 setViewingBoardingPass({ fileURL: url, fileType: file.type });
@@ -180,7 +181,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
         e.stopPropagation();
         setDeletingStatus(prev => ({ ...prev, [flightType]: 'deleting' }));
         try {
-            await deleteBoardingPass(trip.id, flightType);
+            await deleteBoardingPass(userId, trip.id, flightType);
             setPassStatus(prev => ({ ...prev, [flightType]: false }));
         } catch (error) {
             console.error("Error deleting boarding pass:", error);
@@ -212,7 +213,6 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
     const idaAirline = trip.departureFlight?.airline;
     const vueltaAirline = trip.returnFlight?.airline;
     
-    // Normaliza el nombre de la aerolínea para una comparación robusta.
     const getNormalizedAirline = (name: string | null | undefined): string => {
         if (!name) return '';
         const lowerName = name.toLowerCase();
@@ -222,7 +222,6 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
     };
 
     const areAirlinesDifferent = idaAirline && vueltaAirline && getNormalizedAirline(idaAirline) !== getNormalizedAirline(vueltaAirline);
-
 
     let tripTypeText: string;
     if (idaFlight && vueltaFlight) {
@@ -281,7 +280,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext }) =
                 setTimeout(() => setCopied(false), 2000);
             } catch (error) {
                 console.error('Error al copiar al portapapeles:', error);
-                alert('No se pudo copiar. Por favor, hazlo manually.');
+                alert('No se pudo copiar. Por favor, hazlo manualmente.');
             }
         }
     };

@@ -12,6 +12,7 @@ interface TripListProps {
   onDeleteTrip: (tripId: string) => void;
   listFilter: 'all' | 'future' | 'currentMonth' | 'completed';
   nextTripId: string | null;
+  userId: string;
 }
 
 const emptyMessages = {
@@ -52,7 +53,7 @@ const YearSeparator: React.FC<{ year: number }> = ({ year }) => (
   </div>
 );
 
-const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, nextTripId }) => {
+const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, nextTripId, userId }) => {
   if (trips.length === 0) {
     const { title, message, icon } = emptyMessages[listFilter] || emptyMessages.future;
     return (
@@ -91,6 +92,7 @@ const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, ne
               onDelete={() => onDeleteTrip(trip.id)}
               isPast={isPast}
               isNext={isNext}
+              userId={userId}
             />
           </React.Fragment>
         );

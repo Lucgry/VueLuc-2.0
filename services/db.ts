@@ -1,182 +1,78 @@
+import { storage } from '../firebase';
+import { ref, uploadBytes, getBlob, deleteObject, getMetadata } from 'firebase/storage';
+import type { FirebaseError } from 'firebase/app';
 import type { BoardingPassFile } from '../types';
 
-const DB_NAME = 'VueLucDB';
-const DB_VERSION = 1;
-const STORE_NAME = 'boarding_passes';
+// La inicialización de la base de datos ya no es necesaria, Firebase se encarga de ello.
 
-let db: IDBDatabase;
-
-export const initDB = (): Promise<boolean> => {
-  return new Promise((resolve, reject) => {
-    if (db) {
-      return resolve(true);
-    }
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = (event) => {
-      const dbInstance = (event.target as IDBOpenDBRequest).result;
-      if (!dbInstance.objectStoreNames.contains(STORE_NAME)) {
-        dbInstance.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      }
-    };
-
-    request.onsuccess = (event) => {
-      db = (event.target as IDBOpenDBRequest).result;
-      resolve(true);
-    };
-
-    request.onerror = (event) => {
-      console.error('Error en la base de datos:', (event.target as IDBOpenDBRequest).error);
-      reject(false);
-    };
-  });
+const getFileRef = (userId: string, tripId: string, flightType: 'ida' | 'vuelta') => {
+    return ref(storage, `boarding-passes/${userId}/${tripId}-${flightType}`);
 };
 
-/**
- * Realiza una transacción de escritura/eliminación en IndexedDB de forma robusta,
- * envolviendo la transacción completa en una promesa.
- */
-const performTransaction = (
-  action: (store: IDBObjectStore) => void
-): Promise<void> => {
-  return new Promise(async (resolve, reject) => {
-    if (!db) {
-      try {
-        await initDB();
-      } catch (e) {
-        return reject(e);
-      }
-    }
+export const saveBoardingPass = async (userId: string, tripId: string, flightType: 'ida' | 'vuelta', file: File): Promise<void> => {
+    if (!userId) throw new Error("Usuario no autenticado.");
+    const fileRef = getFileRef(userId, tripId, flightType);
+    await uploadBytes(fileRef, file);
+};
 
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-
+export const getBoardingPass = async (userId: string, tripId: string, flightType: 'ida' | 'vuelta'): Promise<File | null> => {
+    if (!userId) throw new Error("Usuario no autenticado.");
     try {
-      action(store);
+        const fileRef = getFileRef(userId, tripId, flightType);
+        const blob = await getBlob(fileRef);
+        // Firebase `getBlob` devuelve un Blob. Un Blob se puede usar como un File para URL.createObjectURL.
+        // Hacemos un cast para mantener la compatibilidad con el tipo existente.
+        return blob as File;
     } catch (error) {
-      return reject(error);
+        const firebaseError = error as FirebaseError;
+        if (firebaseError.code === 'storage/object-not-found') {
+            console.log('La tarjeta de embarque no se encontró en Storage.');
+            return null;
+        }
+        console.error('Error al obtener la tarjeta de embarque de Firebase Storage:', error);
+        throw error;
     }
+};
 
-    transaction.oncomplete = () => {
-      resolve();
-    };
-
-    transaction.onerror = () => {
-      console.error('Error en la transacción de DB:', transaction.error);
-      reject(transaction.error);
-    };
-    
-    transaction.onabort = () => {
-        console.error('Transacción de DB abortada:', transaction.error);
-        reject(transaction.error);
+export const checkBoardingPassExists = async (userId: string, tripId: string, flightType: 'ida' | 'vuelta'): Promise<boolean> => {
+    if (!userId) return false;
+    const fileRef = getFileRef(userId, tripId, flightType);
+    try {
+        await getMetadata(fileRef);
+        return true;
+    } catch (error) {
+        const firebaseError = error as FirebaseError;
+        if (firebaseError.code === 'storage/object-not-found') {
+            return false;
+        }
+        console.error('Error al verificar la existencia de la tarjeta de embarque:', error);
+        throw error; // Relanzar otros errores
     }
-  });
 };
 
-
-export const saveBoardingPass = (tripId: string, flightType: 'ida' | 'vuelta', file: File): Promise<void> => {
-  return performTransaction((store) => {
-    const data: BoardingPassFile = {
-      id: `${tripId}-${flightType}`,
-      tripId,
-      flightType,
-      file,
-    };
-    store.put(data);
-  });
-};
-
-export const getBoardingPass = (tripId: string, flightType: 'ida' | 'vuelta'): Promise<File | null> => {
-    return new Promise(async (resolve, reject) => {
-        if (!db) {
-            try {
-                await initDB();
-            } catch (e) {
-                return reject(e);
-            }
+export const deleteBoardingPass = async (userId: string, tripId: string, flightType: 'ida' | 'vuelta'): Promise<void> => {
+    if (!userId) throw new Error("Usuario no autenticado.");
+    const fileRef = getFileRef(userId, tripId, flightType);
+    try {
+        await deleteObject(fileRef);
+    } catch (error) {
+        const firebaseError = error as FirebaseError;
+        // Si el archivo no se encuentra, ya está "eliminado", así que ignoramos el error.
+        if (firebaseError.code !== 'storage/object-not-found') {
+             console.error('Error al eliminar la tarjeta de embarque de Firebase Storage:', error);
+             throw error;
         }
-        try {
-            const transaction = db.transaction(STORE_NAME, 'readonly');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.get(`${tripId}-${flightType}`);
-
-            let resultData: File | null = null;
-
-            request.onsuccess = (event) => {
-                const result = (event.target as IDBRequest<BoardingPassFile>).result;
-                resultData = result ? result.file : null;
-            };
-
-            // CRÍTICO: Esperar a que la transacción completa termine antes de resolver.
-            // Esto evita que una transacción de lectura bloquee una de escritura posterior.
-            transaction.oncomplete = () => {
-                resolve(resultData);
-            };
-
-            // Manejar errores tanto en la petición como en la transacción para mayor robustez.
-            request.onerror = (event) => {
-                console.error('Error al obtener la tarjeta de embarque (request):', (event.target as IDBRequest).error);
-                reject((event.target as IDBRequest).error);
-            };
-            transaction.onerror = (event) => {
-                console.error('Error al obtener la tarjeta de embarque (transaction):', transaction.error);
-                reject(transaction.error);
-            };
-        } catch (error) {
-            console.error('Error creando la transacción de solo lectura para getBoardingPass:', error);
-            reject(error);
-        }
-    });
+    }
 };
 
-export const checkBoardingPassExists = (tripId: string, flightType: 'ida' | 'vuelta'): Promise<boolean> => {
-    return new Promise(async (resolve, reject) => {
-        if (!db) {
-            try {
-                await initDB();
-            } catch (e) {
-                return reject(e);
-            }
-        }
-        try {
-            const transaction = db.transaction(STORE_NAME, 'readonly');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.get(`${tripId}-${flightType}`);
-
-            let exists = false;
-
-            request.onsuccess = (event) => {
-                exists = !!(event.target as IDBRequest<BoardingPassFile>).result;
-            };
-
-            transaction.oncomplete = () => {
-                resolve(exists);
-            };
-
-            request.onerror = (event) => {
-                reject((event.target as IDBRequest).error);
-            };
-            transaction.onerror = (event) => {
-                reject(transaction.error);
-            };
-        } catch (error) {
-            console.error('Error creando la transacción de solo lectura para checkBoardingPassExists:', error);
-            reject(error);
-        }
-    });
-};
-
-
-export const deleteBoardingPass = (tripId: string, flightType: 'ida' | 'vuelta'): Promise<void> => {
-  return performTransaction((store) => {
-    store.delete(`${tripId}-${flightType}`);
-  });
-};
-
-
-export const deleteBoardingPassesForTrip = (tripId: string): Promise<void> => {
-    return performTransaction((store) => {
-        store.delete(`${tripId}-ida`);
-        store.delete(`${tripId}-vuelta`);
+export const deleteBoardingPassesForTrip = async (userId: string, tripId: string): Promise<void> => {
+    if (!userId) throw new Error("Usuario no autenticado.");
+    // Eliminamos ambas tarjetas de embarque (ida y vuelta) para el viaje.
+    await Promise.all([
+        deleteBoardingPass(userId, tripId, 'ida'),
+        deleteBoardingPass(userId, tripId, 'vuelta'),
+    ]).catch(error => {
+        // Aunque una falle, intentamos ambas. Logueamos el error pero no bloqueamos la eliminación del viaje.
+        console.error("Error eliminando una de las tarjetas de embarque:", error);
     });
 };

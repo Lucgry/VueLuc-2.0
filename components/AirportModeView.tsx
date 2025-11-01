@@ -12,6 +12,7 @@ interface AirportModeViewProps {
   flight: Flight;
   flightType: 'ida' | 'vuelta';
   onClose: () => void;
+  userId: string;
 }
 
 const formatDate = (dateString: string | null) => {
@@ -32,7 +33,7 @@ const formatTime = (dateString: string | null) => {
   });
 };
 
-const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightType, onClose }) => {
+const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightType, onClose, userId }) => {
     const [boardingPassData, setBoardingPassData] = useState<BoardingPassData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -43,7 +44,8 @@ const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightT
             setIsLoading(true);
             setError(null);
             try {
-                const file = await getBoardingPass(trip.id, flightType);
+                // FIX: Pass userId as the first argument to getBoardingPass.
+                const file = await getBoardingPass(userId, trip.id, flightType);
                 if (file) {
                     const url = URL.createObjectURL(file);
                     setBoardingPassData({ fileURL: url, fileType: file.type });
@@ -67,7 +69,7 @@ const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightT
             }
         };
 
-    }, [trip.id, flightType]);
+    }, [userId, trip.id, flightType]);
 
     return (
         <>
