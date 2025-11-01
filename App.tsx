@@ -82,15 +82,20 @@ const App: React.FC = () => {
                     <p className="text-sm text-red-700 dark:text-red-300 mt-1">
                         {firebaseInitializationError.message}
                     </p>
-                    {firebaseInitializationError.link && (
-                        <a 
-                            href={firebaseInitializationError.link.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-3 inline-block px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm"
-                        >
-                            {firebaseInitializationError.link.text} &rarr;
-                        </a>
+                    {firebaseInitializationError.links && (
+                       <div className="mt-4 flex flex-col space-y-2">
+                         {firebaseInitializationError.links.map((link, index) => (
+                           <a 
+                                key={index}
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-block px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm text-center"
+                            >
+                                {link.text} &rarr;
+                            </a>
+                         ))}
+                       </div>
                     )}
                 </div>
             </div>
@@ -103,7 +108,7 @@ const App: React.FC = () => {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
-  const [authRuntimeError, setAuthRuntimeError] = useState<{ message: string; link?: { url: string; text: string; } } | null>(null);
+  const [authRuntimeError, setAuthRuntimeError] = useState<{ message: string; links?: { url: string; text: string; }[] } | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isQuickAddModalOpen, setIsQuickAddModalOpen] = useState(false);
@@ -141,11 +146,17 @@ const App: React.FC = () => {
             const errorMessage = error.message || '';
             if (error.code === 'auth/network-request-failed' || errorMessage.includes('403') || errorMessage.includes('securetoken')) {
               setAuthRuntimeError({
-                message: `Tu inicio de sesión funciona, pero la app no puede verificar la sesión de forma segura. Esto casi siempre significa que un servicio requerido no está habilitado en tu proyecto de la nube. Haz clic en el botón de abajo para activarlo y refresca la página.`,
-                link: {
-                  url: `https://console.cloud.google.com/apis/library/identitytoolkit.googleapis.com?project=${projectId}`,
-                  text: 'Habilitar API Requerida'
-                }
+                message: `Tu inicio de sesión funciona, pero la app no puede verificar la sesión de forma segura. Esto casi siempre significa que un servicio requerido no está habilitado en tu proyecto de la nube.\n\nPor favor, haz clic en el primer botón para activarlo. Si el problema persiste, revisa las restricciones de tu API key.`,
+                links: [
+                    {
+                        url: `https://console.cloud.google.com/apis/library/identitytoolkit.googleapis.com?project=${projectId}`,
+                        text: '1. Habilitar API de Autenticación (Identity Toolkit)'
+                    },
+                    {
+                        url: `https://console.cloud.google.com/apis/credentials?project=${projectId}`,
+                        text: '2. Revisar Restricciones de API Key'
+                    }
+                ]
               });
             } else {
                setAuthRuntimeError({ message: `Ocurrió un error inesperado durante la autenticación: ${errorMessage}`});
@@ -427,18 +438,23 @@ const App: React.FC = () => {
                     </div>
                     <div>
                         <h4 className="font-semibold text-red-800 dark:text-red-200">Acción Requerida:</h4>
-                        <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                        <p className="text-sm text-red-700 dark:text-red-300 mt-1 whitespace-pre-wrap">
                             {authRuntimeError.message}
                         </p>
-                        {authRuntimeError.link && (
-                            <a 
-                                href={authRuntimeError.link.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="mt-3 inline-block px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm"
-                            >
-                                {authRuntimeError.link.text} &rarr;
-                            </a>
+                        {authRuntimeError.links && (
+                           <div className="mt-4 flex flex-col space-y-2">
+                            {authRuntimeError.links.map((link, index) => (
+                                <a 
+                                    key={index}
+                                    href={link.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-block px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm text-center"
+                                >
+                                    {link.text} &rarr;
+                                </a>
+                            ))}
+                           </div>
                         )}
                     </div>
                 </div>

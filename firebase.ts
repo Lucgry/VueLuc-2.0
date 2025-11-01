@@ -20,7 +20,7 @@ let db: Firestore | null = null;
 let storage: FirebaseStorage | null = null;
 let googleProvider: GoogleAuthProvider | null = null;
 let isFirebaseInitialized = false;
-let firebaseInitializationError: { message: string; link?: { url: string; text: string; }; } | null = null;
+let firebaseInitializationError: { message: string; links?: { url: string; text: string; }[]; } | null = null;
 const projectId = firebaseConfig.projectId;
 
 if (hasAllConfigValues) {
@@ -38,10 +38,10 @@ if (hasAllConfigValues) {
         if (errorMessage.includes('auth has not been registered')) {
             firebaseInitializationError = {
                 message: `Este error usualmente significa que la Autenticación (o el proveedor de Google) no está habilitada o no se guardó el cambio en tu proyecto de Firebase. Por favor, ve a la Consola de Firebase > Authentication > Sign-in method, y habilita el proveedor de Google. Es MUY IMPORTANTE que hagas clic en 'Guardar'. Si el botón 'Guardar' está deshabilitado, apaga y vuelve a encender el interruptor para activarlo.`,
-                link: {
+                links: [{
                     url: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`,
                     text: 'Ir a la consola de Firebase'
-                }
+                }]
             };
         } else {
             firebaseInitializationError = { message: errorMessage };
