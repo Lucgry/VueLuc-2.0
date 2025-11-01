@@ -1,7 +1,6 @@
 import { storage } from '../firebase';
-import { ref, uploadBytes, getBlob, deleteObject, getMetadata } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject, getMetadata } from 'firebase/storage';
 import type { FirebaseError } from 'firebase/app';
-import type { BoardingPassFile } from '../types';
 
 // La inicialización de la base de datos ya no es necesaria, Firebase se encarga de ello.
 
@@ -19,9 +18,19 @@ export const getBoardingPass = async (userId: string, tripId: string, flightType
     if (!userId) throw new Error("Usuario no autenticado.");
     try {
         const fileRef = getFileRef(userId, tripId, flightType);
-        const blob = await getBlob(fileRef);
-        // Firebase `getBlob` devuelve un Blob. Un Blob se puede usar como un File para URL.createObjectURL.
-        // Hacemos un cast para mantener la compatibilidad con el tipo existente.
+        
+        // Paso 1: Obtener una URL de descarga con un token de acceso temporal.
+        const downloadUrl = await getDownloadURL(fileRef);
+        
+        // Paso 2: Usar `fetch` para descargar el archivo. Esto evita la solicitud "preflight" de CORS
+        // que causaba el problema, ya que es una solicitud GET simple.
+        const response = await fetch(downloadUrl);
+        if (!response.ok) {
+            throw new Error(`Error al descargar el archivo: ${response.statusText}`);
+        }
+        const blob = await response.blob();
+        
+        // Devolvemos el Blob, que es compatible con lo que el componente espera (File).
         return blob as File;
     } catch (error) {
         const firebaseError = error as FirebaseError;
