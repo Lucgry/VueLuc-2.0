@@ -46,9 +46,9 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
 
     const availableYears = useMemo(() => {
         const yearsSet = trips.reduce((acc, trip) => {
-            const purchaseDateStr = trip.createdAt;
-            if (purchaseDateStr) {
-                const year = new Date(purchaseDateStr).getFullYear();
+            const costDateStr = trip.purchaseDate || trip.createdAt;
+            if (costDateStr) {
+                const year = new Date(costDateStr).getFullYear();
                 if (!Number.isNaN(year)) {
                     acc.add(year);
                 }
@@ -66,8 +66,8 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     
     const tripsForSelectedYear = useMemo(() => {
         return trips.filter(trip => {
-            const purchaseDateStr = trip.createdAt;
-            return purchaseDateStr ? new Date(purchaseDateStr).getFullYear() === selectedYear : false;
+            const costDateStr = trip.purchaseDate || trip.createdAt;
+            return costDateStr ? new Date(costDateStr).getFullYear() === selectedYear : false;
         });
     }, [trips, selectedYear]);
     
@@ -111,7 +111,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     const monthlyCosts = useMemo(() => {
         const costs = Array(12).fill(0);
         tripsForSelectedYear.forEach(trip => {
-            const purchaseDate = trip.createdAt ? new Date(trip.createdAt) : null;
+            const purchaseDate = (trip.purchaseDate || trip.createdAt) ? new Date(trip.purchaseDate || trip.createdAt) : null;
 
             if (purchaseDate) {
                 const month = purchaseDate.getMonth();

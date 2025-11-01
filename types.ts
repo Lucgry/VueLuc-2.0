@@ -14,6 +14,7 @@ export interface Flight {
 export interface Trip {
   id: string;
   createdAt: string;
+  purchaseDate?: string;
   departureFlight: Flight | null;
   returnFlight: Flight | null;
   bookingReference: string | null;

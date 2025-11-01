@@ -28,8 +28,9 @@ const tripSchema = {
       items: flightSchema,
     },
     bookingReference: { type: Type.STRING, description: "Código de reserva o localizador." },
+    purchaseDate: { type: Type.STRING, description: "La fecha en que se realizó la compra o se emitió la confirmación del viaje, extraída del correo. Debe estar en formato ISO 8601 'YYYY-MM-DDTHH:mm:ss'. Si no se encuentra explícitamente, usa la fecha de salida del primer vuelo como la fecha de compra." },
   },
-  required: ["bookingReference", "flights"]
+  required: ["bookingReference", "flights", "purchaseDate"]
 };
 
 export const parseFlightEmail = async (apiKey: string, emailText: string, pdfBase64?: string | null): Promise<Omit<Trip, 'id' | 'createdAt'>> => {
@@ -53,12 +54,13 @@ export const parseFlightEmail = async (apiKey: string, emailText: string, pdfBas
     1.  TAREA PRINCIPAL: Extrae CADA VUELO que encuentres en el email y colócalo como un objeto dentro de la lista 'flights' del JSON.
     2.  REGLA DE ORO: NO INVENTES VUELOS. Si el email contiene solo UN vuelo, la lista 'flights' DEBE contener solo UN objeto. Si el email contiene dos vuelos (ida y vuelta), la lista 'flights' debe contener DOS objetos.
     3.  COSTO: El costo total del viaje debe ser asignado al campo 'cost' del PRIMER vuelo en la lista 'flights'.
+    4.  FECHA DE COMPRA: Es CRÍTICO que extraigas la fecha en que se realizó la compra o se emitió la confirmación del viaje. Asígnala al campo 'purchaseDate'. Si el email no menciona explícitamente una fecha de compra o emisión, DEBES usar la fecha de salida del primer vuelo como el valor para 'purchaseDate'.
 
     FORMATO DE FECHA:
     - Debes convertir SIEMPRE las fechas y horas al formato estricto ISO 8601: 'YYYY-MM-DDTHH:mm:ss'.
     - Si el año no está especificado (ej. '21 oct'), deduce el año futuro más próximo. Si la fecha actual es Junio 2025 y la fecha del vuelo es '21 oct', el año es 2025. Si la fecha actual es Diciembre 2025 y la fecha del vuelo es '21 oct', el año correcto es 2026.
 
-    Extrae también el 'bookingReference'.
+    Extrae también el 'bookingReference' y el 'purchaseDate'.
   `;
 
   try {
@@ -92,6 +94,7 @@ export const parseFlightEmail = async (apiKey: string, emailText: string, pdfBas
     type GeminiResponse = {
       flights: Flight[];
       bookingReference: string | null;
+      purchaseDate: string;
     };
 
     const aiResponse = JSON.parse(parsedText) as GeminiResponse;
@@ -100,6 +103,7 @@ export const parseFlightEmail = async (apiKey: string, emailText: string, pdfBas
       departureFlight: null,
       returnFlight: null,
       bookingReference: aiResponse.bookingReference,
+      purchaseDate: aiResponse.purchaseDate,
     };
 
     const BUENOS_AIRES_CODES = ['AEP', 'EZE'];
