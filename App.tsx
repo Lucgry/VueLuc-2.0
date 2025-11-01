@@ -25,6 +25,8 @@ import { FullScreenLoader } from './components/Spinner';
 import { BoltIcon } from './components/icons/BoltIcon';
 import { InformationCircleIcon } from './components/icons/InformationCircleIcon';
 import { ClockIcon } from './components/icons/ClockIcon';
+import { FunnelIcon } from './components/icons/FunnelIcon';
+import { ChevronDownIcon } from './components/icons/ChevronDownIcon';
 
 // A type guard for BeforeInstallPromptEvent
 interface BeforeInstallPromptEvent extends Event {
@@ -449,11 +451,26 @@ const App: React.FC = () => {
 
           {view === 'list' && (
             <>
-              <div className="flex justify-center space-x-1 mb-4 p-1 bg-slate-100 dark:bg-slate-800 rounded-full shadow-neumo-light-in dark:shadow-neumo-dark-in text-sm font-semibold">
-                <button onClick={() => setListFilter('future')} className={`px-4 py-1.5 rounded-full transition-all ${listFilter === 'future' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'}`}>Futuros</button>
-                <button onClick={() => setListFilter('currentMonth')} className={`px-4 py-1.5 rounded-full transition-all ${listFilter === 'currentMonth' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'}`}>Este Mes</button>
-                <button onClick={() => setListFilter('completed')} className={`px-4 py-1.5 rounded-full transition-all ${listFilter === 'completed' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'}`}>Completados</button>
-                <button onClick={() => setListFilter('all')} className={`px-4 py-1.5 rounded-full transition-all ${listFilter === 'all' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'}`}>Todos</button>
+              <div className="mb-6 flex justify-center">
+                  <div className="relative inline-flex items-center bg-slate-100 dark:bg-slate-800 rounded-full shadow-neumo-light-out dark:shadow-neumo-dark-out">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                          <FunnelIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                      </div>
+                      <select
+                          value={listFilter}
+                          onChange={(e) => setListFilter(e.target.value as ListFilter)}
+                          className="w-full appearance-none rounded-full border-none bg-transparent py-2.5 pl-11 pr-10 text-sm font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                          aria-label="Filtrar viajes"
+                      >
+                          <option value="future">Futuros</option>
+                          <option value="currentMonth">Este Mes</option>
+                          <option value="completed">Completados</option>
+                          <option value="all">Todos</option>
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
+                          <ChevronDownIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                      </div>
+                  </div>
               </div>
               <TripList
                 trips={filteredTrips}
