@@ -112,18 +112,16 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
         const costsByMonth: { [monthIndex: number]: number } = {};
 
         for (const trip of tripsForSelectedYear) {
-            // Regla de negocio: La fecha que rige el gasto es ÚNICAMENTE la fecha de compra.
-            const costDateStr = trip.purchaseDate;
-            if (!costDateStr) continue; // Si no hay fecha de compra, el viaje no se cuenta en este desglose.
+            // Regla de negocio: La fecha del gasto es la de compra, o la de creación si la primera no está disponible.
+            const costDateStr = trip.purchaseDate || trip.createdAt;
+            if (!costDateStr) continue;
 
             const purchaseDate = new Date(costDateStr);
             const monthIndex = purchaseDate.getMonth(); // 0 para Enero, 11 para Diciembre
             if (isNaN(monthIndex)) continue;
             
-            // Suma el costo total del viaje
             const totalTripCost = (trip.departureFlight?.cost || 0) + (trip.returnFlight?.cost || 0);
 
-            // Acumula el costo en el mes correspondiente a la compra.
             if (totalTripCost > 0) {
                 costsByMonth[monthIndex] = (costsByMonth[monthIndex] || 0) + totalTripCost;
             }
@@ -205,7 +203,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
         )}
 
         <div>
-            <h3 className="text-xl font-bold mb-4">Desglose Mensual (por Fecha de Compra)</h3>
+            <h3 className="text-xl font-bold mb-4">Desglose Mensual</h3>
             <div className="space-y-3">
                 {monthlyBreakdown.map(({ name, cost }) => {
                     if (cost === 0 && tripsForSelectedYear.length > 0) return null;
