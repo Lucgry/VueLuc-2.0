@@ -18,7 +18,7 @@ import { deleteBoardingPassesForTrip } from './services/db';
 import AirportModeView from './components/AirportModeView';
 import ApiKeySetup from './components/ApiKeySetup';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { db, auth, isFirebaseInitialized, firebaseInitializationError, projectId } from './firebase';
+import { db, auth, isFirebaseInitialized, firebaseInitializationError, projectId, authDomain } from './firebase';
 import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, updateDoc } from 'firebase/firestore';
 import LoginScreen from './components/LoginScreen';
 import { FullScreenLoader } from './components/Spinner';
@@ -144,21 +144,30 @@ const App: React.FC = () => {
           })
           .catch(error => {
             const errorMessage = error.message || '';
-            if (error.code === 'auth/network-request-failed' || errorMessage.includes('403') || errorMessage.includes('securetoken')) {
+            const isHttpError = error.code === 'auth/network-request-failed' || errorMessage.includes('403') || errorMessage.includes('securetoken') || errorMessage.includes('API_KEY_HTTP_REFERRER_BLOCKED');
+            
+            if (isHttpError) {
+              const isDifferentDomain = authDomain && window.location.hostname !== authDomain;
+              const requiredDomains = [
+                  window.location.origin,
+                  ...(isDifferentDomain ? [`https://${authDomain}`] : [])
+              ];
+              const domainInstructions = requiredDomains.map(d => `• ${d}/*`).join('\n');
+
               setAuthRuntimeError({
-                message: `Tu inicio de sesión funciona, pero la app no puede mantener la sesión segura. Esto suele ocurrir porque una API necesaria no está habilitada en tu proyecto o no está incluida en las restricciones de tu clave de API.\n\nPor favor, sigue estos pasos en orden. Después de habilitar las APIs en los pasos 1 y 2, ve al paso 3 y asegúrate de que AMBAS APIs ("Identity Toolkit" y "Security Token Service") estén seleccionadas en la lista de APIs permitidas para tu clave.`,
+                message: `¡Casi listo! Tu inicio de sesión funcionó, pero la app no puede mantener la sesión segura.\n\nLa causa más común es que tu clave de API tiene **Restricciones de sitios web** que bloquean esta aplicación.\n\nPor favor, sigue estos pasos:\n1. Haz clic en "Revisar Restricciones de API Key".\n2. Busca la sección "Restricciones de sitios web".\n3. Asegúrate de que **TODAS** las siguientes URLs estén en la lista de sitios permitidos:\n\n${domainInstructions}\n\nSi el problema persiste, verifica que las APIs de Autenticación y STS estén habilitadas (pasos 2 y 3).`,
                 links: [
                     {
+                        url: `https://console.cloud.google.com/apis/credentials?project=${projectId}`,
+                        text: '1. Revisar Restricciones de API Key'
+                    },
+                    {
                         url: `https://console.cloud.google.com/apis/library/identitytoolkit.googleapis.com?project=${projectId}`,
-                        text: '1. Habilitar API de Autenticación (Identity Toolkit)'
+                        text: '2. Habilitar API de Autenticación (Opcional)'
                     },
                     {
                         url: `https://console.cloud.google.com/apis/library/sts.googleapis.com?project=${projectId}`,
-                        text: '2. Habilitar API de Servicio de Tokens (STS)'
-                    },
-                    {
-                        url: `https://console.cloud.google.com/apis/credentials?project=${projectId}`,
-                        text: '3. Revisar Restricciones de API Key'
+                        text: '3. Habilitar API de Tokens (Opcional)'
                     }
                 ]
               });
