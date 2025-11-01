@@ -139,7 +139,7 @@ const App: React.FC = () => {
           })
           .catch(error => {
             const errorMessage = error.message || '';
-            if (error.code === 'auth/network-request-failed' || errorMessage.includes('403')) {
+            if (error.code === 'auth/network-request-failed' || errorMessage.includes('403') || errorMessage.includes('securetoken')) {
               setAuthRuntimeError({
                 message: `Tu inicio de sesión funciona, pero la app no puede verificar la sesión de forma segura. Esto casi siempre significa que un servicio requerido no está habilitado en tu proyecto de la nube. Haz clic en el botón de abajo para activarlo y refresca la página.`,
                 link: {
