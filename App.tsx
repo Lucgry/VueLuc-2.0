@@ -18,7 +18,7 @@ import { deleteBoardingPassesForTrip } from './services/db';
 import AirportModeView from './components/AirportModeView';
 import ApiKeySetup from './components/ApiKeySetup';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { db, auth, isFirebaseInitialized, firebaseInitializationError } from './firebase';
+import { db, auth, isFirebaseInitialized, firebaseInitializationError, projectId } from './firebase';
 import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, updateDoc } from 'firebase/firestore';
 import LoginScreen from './components/LoginScreen';
 import { FullScreenLoader } from './components/Spinner';
@@ -103,6 +103,7 @@ const App: React.FC = () => {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
+  const [authRuntimeError, setAuthRuntimeError] = useState<{ message: string; link?: { url: string; text: string; } } | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isQuickAddModalOpen, setIsQuickAddModalOpen] = useState(false);
@@ -126,21 +127,48 @@ const App: React.FC = () => {
   
   // Authentication effect
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth!, (currentUser) => {
-      setUser(currentUser);
-      setLoadingAuth(false);
+    if (!auth) return;
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser && projectId) {
+        // Proactively check if token refresh works to catch API errors
+        currentUser.getIdToken(true)
+          .then(() => {
+            setAuthRuntimeError(null);
+            setUser(currentUser);
+            setLoadingAuth(false);
+          })
+          .catch(error => {
+            const errorMessage = error.message || '';
+            if (error.code === 'auth/network-request-failed' || errorMessage.includes('403')) {
+              setAuthRuntimeError({
+                message: `Tu inicio de sesión funciona, pero la app no puede verificar la sesión de forma segura. Esto casi siempre significa que un servicio requerido no está habilitado en tu proyecto de la nube. Haz clic en el botón de abajo para activarlo y refresca la página.`,
+                link: {
+                  url: `https://console.cloud.google.com/apis/library/identitytoolkit.googleapis.com?project=${projectId}`,
+                  text: 'Habilitar API Requerida'
+                }
+              });
+            } else {
+               setAuthRuntimeError({ message: `Ocurrió un error inesperado durante la autenticación: ${errorMessage}`});
+            }
+            setUser(null); // Log out user on verification failure
+            setLoadingAuth(false);
+        });
+      } else {
+        setUser(currentUser);
+        setLoadingAuth(false);
+      }
     });
     return () => unsubscribe();
   }, []);
 
   // Firestore data loading effect
   useEffect(() => {
-    if (!user) {
+    if (!user || !db) {
       setTrips([]);
       return;
     }
 
-    const tripsCollectionRef = collection(db!, 'users', user.uid, 'trips');
+    const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
     const q = query(tripsCollectionRef, orderBy('createdAt', 'desc'));
 
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -215,12 +243,11 @@ const App: React.FC = () => {
   }
 
   const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
-    if (!user) {
+    if (!user || !db) {
         alert("Debes iniciar sesión para agregar un viaje.");
         return;
     }
 
-    // --- DUPLICATE CHECK ---
     const isDuplicate = trips.some(existingTrip => {
         const newDepFlight = newTripData.departureFlight;
         const newRetFlight = newTripData.returnFlight;
@@ -246,20 +273,17 @@ const App: React.FC = () => {
         setIsQuickAddModalOpen(false);
         return;
     }
-    // --- END DUPLICATE CHECK ---
 
     const isNewTripSingleLeg = (newTripData.departureFlight && !newTripData.returnFlight) || (!newTripData.departureFlight && newTripData.returnFlight);
 
-    // If it's a full round trip, just add it.
     if (!isNewTripSingleLeg) {
         const newTripWithMeta = { ...newTripData, createdAt: new Date().toISOString() };
-        await addDoc(collection(db!, 'users', user.uid, 'trips'), newTripWithMeta);
+        await addDoc(collection(db, 'users', user.uid, 'trips'), newTripWithMeta);
         setIsModalOpen(false);
         setIsQuickAddModalOpen(false);
         return;
     }
 
-    // --- SMART MERGE LOGIC ---
     const newFlight = newTripData.departureFlight || newTripData.returnFlight;
     const newFlightDate = new Date(newFlight!.departureDateTime!);
     const isNewTripIda = !!newTripData.departureFlight;
@@ -269,100 +293,68 @@ const App: React.FC = () => {
     for (const existingTrip of trips) {
         const isExistingSingleLeg = (existingTrip.departureFlight && !existingTrip.returnFlight) || (!existingTrip.departureFlight && existingTrip.returnFlight);
         if (!isExistingSingleLeg) continue;
-        const isExistingIda = !!existingTrip.departureFlight;
-        if (isNewTripIda === isExistingIda) continue;
+        
         const existingFlight = existingTrip.departureFlight || existingTrip.returnFlight;
+        const isExistingTripIda = !!existingTrip.departureFlight;
+
+        if (isNewTripIda === isExistingTripIda) continue;
+
         const existingFlightDate = new Date(existingFlight!.departureDateTime!);
         const timeDiff = Math.abs(newFlightDate.getTime() - existingFlightDate.getTime());
-        const daysDiff = timeDiff / (1000 * 60 * 60 * 24);
-        if (daysDiff > 10) continue;
-        const idaDate = isNewTripIda ? newFlightDate : existingFlightDate;
-        const vueltaDate = isNewTripIda ? existingFlightDate : newFlightDate;
-        if (vueltaDate < idaDate) continue;
-        if (!bestMatch || timeDiff < bestMatch.timeDiff) {
-            bestMatch = { trip: existingTrip, timeDiff };
+
+        if (timeDiff < 15 * 24 * 60 * 60 * 1000) { // 15 days window
+            if (!bestMatch || timeDiff < bestMatch.timeDiff) {
+                bestMatch = { trip: existingTrip, timeDiff };
+            }
         }
     }
 
     if (bestMatch) {
-        const partnerTrip = bestMatch.trip;
-        const combinedTripData = {
-            departureFlight: isNewTripIda ? newTripData.departureFlight : partnerTrip.departureFlight,
-            returnFlight: !isNewTripIda ? newTripData.returnFlight : partnerTrip.returnFlight,
-            bookingReference: `${partnerTrip.bookingReference} / ${newTripData.bookingReference}`,
-        };
-        const tripRef = doc(db!, 'users', user.uid, 'trips', partnerTrip.id);
-        await updateDoc(tripRef, combinedTripData);
+        const tripToUpdate = { ...bestMatch.trip };
+        if (isNewTripIda) {
+            tripToUpdate.departureFlight = newFlight;
+        } else {
+            tripToUpdate.returnFlight = newFlight;
+        }
+        
+        const tripDocRef = doc(db, 'users', user.uid, 'trips', tripToUpdate.id);
+        const { id, ...dataToUpdate } = tripToUpdate;
+        await updateDoc(tripDocRef, dataToUpdate);
     } else {
         const newTripWithMeta = { ...newTripData, createdAt: new Date().toISOString() };
-        await addDoc(collection(db!, 'users', user.uid, 'trips'), newTripWithMeta);
+        await addDoc(collection(db, 'users', user.uid, 'trips'), newTripWithMeta);
     }
-    
+
     setIsModalOpen(false);
     setIsQuickAddModalOpen(false);
   };
-
+  
   const handleDeleteTrip = async (tripId: string) => {
-    if (!user) return;
+    if (!user || !db) return;
     try {
         await deleteBoardingPassesForTrip(user.uid, tripId);
-        const tripDocRef = doc(db!, 'users', user.uid, 'trips', tripId);
-        await deleteDoc(tripDocRef);
+        await deleteDoc(doc(db, 'users', user.uid, 'trips', tripId));
     } catch (error) {
-        console.error("Error deleting trip and associated files:", error);
-        alert("Hubo un problema al eliminar el viaje.");
+        console.error("Error deleting trip:", error);
+        alert("No se pudo eliminar el viaje.");
     }
   };
 
-  const handleInstall = () => {
-    if (installPromptEvent) {
-      installPromptEvent.prompt();
-      installPromptEvent.userChoice.then(choiceResult => {
-        if (choiceResult.outcome === 'accepted') {
-          console.log('User accepted the install prompt');
-        } else {
-          console.log('User dismissed the install prompt');
-        }
-        setInstallPromptEvent(null);
-        setIsInstallBannerVisible(false);
-      });
-    }
-  };
-
-  const handleDismissInstallBanner = () => {
-    sessionStorage.setItem('installBannerDismissed', 'true');
-    setIsInstallBannerVisible(false);
-  };
-  
   const sortedTrips = useMemo(() => {
-      return [...trips].sort((a, b) => {
-          const dateA = getTripStartDate(a);
-          const dateB = getTripStartDate(b);
-          if (!dateA) return 1;
-          if (!dateB) return -1;
-          return dateA.getTime() - dateB.getTime();
-      });
+    return [...trips].sort((a, b) => {
+        const dateA = getTripStartDate(a);
+        const dateB = getTripStartDate(b);
+        if (dateA && dateB) return dateA.getTime() - dateB.getTime();
+        return 0;
+    });
   }, [trips]);
 
-  const nextUpcomingFlightInfo = useMemo(() => {
+  const nextTrip = useMemo(() => {
     const now = new Date();
-    const allFlightsWithDates = sortedTrips.flatMap(trip => {
-      const flights = [];
-      if (trip.departureFlight?.departureDateTime && !isNaN(new Date(trip.departureFlight.departureDateTime).getTime())) {
-        flights.push({ trip, flight: trip.departureFlight, flightType: 'ida' as const, date: new Date(trip.departureFlight.departureDateTime) });
-      }
-      if (trip.returnFlight?.departureDateTime && !isNaN(new Date(trip.returnFlight.departureDateTime).getTime())) {
-        flights.push({ trip, flight: trip.returnFlight, flightType: 'vuelta' as const, date: new Date(trip.returnFlight.departureDateTime) });
-      }
-      return flights;
-    });
-
-    const futureFlights = allFlightsWithDates.filter(item => item.date > now);
-    if (futureFlights.length === 0) return null;
-
-    futureFlights.sort((a, b) => a.date.getTime() - b.date.getTime());
-    const { trip, flight, flightType } = futureFlights[0];
-    return { trip, flight, flightType };
+    return sortedTrips.find(trip => {
+      const startDate = getTripStartDate(trip);
+      return startDate ? startDate > now : false;
+    }) || null;
   }, [sortedTrips]);
 
   const filteredTrips = useMemo(() => {
@@ -370,47 +362,89 @@ const App: React.FC = () => {
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
 
-    switch (listFilter) {
+    switch(listFilter) {
       case 'future':
         return sortedTrips.filter(trip => {
-          const endDate = getTripEndDate(trip);
-          return endDate ? endDate >= now : true;
-        });
-      case 'currentMonth':
-        return sortedTrips.filter(trip => {
-          const startDate = getTripStartDate(trip);
-          return startDate ? startDate.getMonth() === currentMonth && startDate.getFullYear() === currentYear : false;
+            const startDate = getTripStartDate(trip);
+            return startDate ? startDate >= now : true;
         });
       case 'completed':
         return sortedTrips.filter(trip => {
-          const endDate = getTripEndDate(trip);
-          return endDate ? endDate < now : false;
-        }).reverse(); // Show most recently completed first
+            const endDate = getTripEndDate(trip);
+            return endDate ? endDate < now : false;
+        }).reverse(); // Show most recent completed first
+      case 'currentMonth':
+        return sortedTrips.filter(trip => {
+            const startDate = getTripStartDate(trip);
+            return startDate ? startDate.getMonth() === currentMonth && startDate.getFullYear() === currentYear : false;
+        });
       case 'all':
       default:
         return sortedTrips;
     }
   }, [sortedTrips, listFilter]);
-  
-  const handleQuickAddClick = () => {
-    setIsQuickAddModalOpen(true);
-    setIsFabMenuOpen(false);
-  };
 
-  const handleAiImportClick = () => {
-    setIsModalOpen(true);
-    setIsFabMenuOpen(false);
-  };
+  const nextFlightForCountdown = useMemo(() => {
+    if (!nextTrip) return null;
+    const now = new Date().getTime();
+    
+    const depTime = nextTrip.departureFlight?.departureDateTime ? new Date(nextTrip.departureFlight.departureDateTime).getTime() : Infinity;
+    const retTime = nextTrip.returnFlight?.departureDateTime ? new Date(nextTrip.returnFlight.departureDateTime).getTime() : Infinity;
+
+    if (depTime > now && depTime < retTime) {
+      return { flight: nextTrip.departureFlight!, type: 'ida' as const };
+    }
+    if (retTime > now) {
+      return { flight: nextTrip.returnFlight!, type: 'vuelta' as const };
+    }
+    return null;
+  }, [nextTrip]);
   
-  const filterIcons: { [key in ListFilter]: React.ReactNode } = {
-    future: <ArrowUpRightIcon className="w-5 h-5" />,
-    currentMonth: <CalendarClockIcon className="w-5 h-5" />,
-    completed: <CheckBadgeIcon className="w-5 h-5" />,
-    all: <BriefcaseIcon className="w-5 h-5" />,
-  };
-  
+  const fabAction = (action: 'quick' | 'ai') => {
+      if (action === 'quick') {
+          setIsQuickAddModalOpen(true);
+      } else {
+          setIsModalOpen(true);
+      }
+      setIsFabMenuOpen(false);
+  }
+
   if (loadingAuth) {
     return <FullScreenLoader />;
+  }
+  
+  if (authRuntimeError) {
+     return (
+        <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">
+            <div className="max-w-xl w-full bg-slate-100 dark:bg-slate-800 p-8 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out">
+                <div className="mx-auto mb-4 bg-slate-100 dark:bg-slate-800 text-red-600 dark:text-red-400 w-16 h-16 rounded-full flex items-center justify-center shadow-neumo-light-out dark:shadow-neumo-dark-out">
+                    <InformationCircleIcon className="w-8 h-8" />
+                </div>
+                <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Error de Autenticación</h1>
+                 <div className="mt-6 p-4 rounded-lg bg-red-100/50 dark:bg-red-900/20 text-left flex items-start space-x-3 shadow-neumo-light-in dark:shadow-neumo-dark-in">
+                    <div className="flex-shrink-0 mt-0.5">
+                        <InformationCircleIcon className="w-5 h-5 text-red-600 dark:text-red-300" />
+                    </div>
+                    <div>
+                        <h4 className="font-semibold text-red-800 dark:text-red-200">Acción Requerida:</h4>
+                        <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                            {authRuntimeError.message}
+                        </p>
+                        {authRuntimeError.link && (
+                            <a 
+                                href={authRuntimeError.link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-3 inline-block px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm"
+                            >
+                                {authRuntimeError.link.text} &rarr;
+                            </a>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
   }
 
   if (!user) {
@@ -421,119 +455,91 @@ const App: React.FC = () => {
     return <ApiKeySetup onKeySave={handleApiKeySave} />;
   }
   
-  if (isAirportMode && nextUpcomingFlightInfo) {
-    return (
-      <AirportModeView
-        trip={nextUpcomingFlightInfo.trip}
-        flight={nextUpcomingFlightInfo.flight}
-        flightType={nextUpcomingFlightInfo.flightType}
-        onClose={handleToggleAirportMode}
-        userId={user.uid}
-      />
-    );
+  if (isAirportMode && nextFlightForCountdown) {
+      return <AirportModeView trip={nextTrip!} flight={nextFlightForCountdown.flight} flightType={nextFlightForCountdown.type} onClose={handleToggleAirportMode} userId={user.uid} />
   }
 
   return (
-    <div className="min-h-screen bg-slate-200 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-sans p-4 sm:p-6 md:p-8">
-      <div className="max-w-4xl mx-auto">
-        <Header
-          theme={theme}
-          onToggleTheme={handleToggleTheme}
-          isAirportMode={isAirportMode}
-          onToggleAirportMode={handleToggleAirportMode}
-        />
-        <main className="pb-24">
-          {isInstallBannerVisible && (
-            <InstallBanner onInstall={handleInstall} onDismiss={handleDismissInstallBanner} />
-          )}
+    <div className="max-w-4xl mx-auto p-4 md:p-6">
+        <Header theme={theme} onToggleTheme={handleToggleTheme} isAirportMode={isAirportMode} onToggleAirportMode={handleToggleAirportMode} />
+        
+        {isInstallBannerVisible && installPromptEvent && (
+            <InstallBanner 
+                onInstall={() => installPromptEvent.prompt()}
+                onDismiss={() => {
+                    setIsInstallBannerVisible(false);
+                    sessionStorage.setItem('installBannerDismissed', 'true');
+                }}
+            />
+        )}
+        
+        {isModalOpen && <EmailImporter apiKey={apiKey} onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} onInvalidApiKey={handleInvalidApiKey} />}
+        {isQuickAddModalOpen && <QuickAddModal onClose={() => setIsQuickAddModalOpen(false)} onAddTrip={handleAddTrip} />}
 
-          {nextUpcomingFlightInfo && !isAirportMode && (
-            <NextTripCard flight={nextUpcomingFlightInfo.flight} flightType={nextUpcomingFlightInfo.flightType} />
-          )}
-
-          <div className="flex justify-center space-x-2 mb-6 p-1 bg-slate-100 dark:bg-slate-800 rounded-full shadow-neumo-light-in dark:shadow-neumo-dark-in">
-            <button onClick={() => setView('list')} className={`py-2 rounded-full text-sm font-semibold transition-all flex items-center justify-center ${view === 'list' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'} w-14 sm:w-auto sm:px-4`}>
-                <ListBulletIcon className="w-5 h-5" />
-                <span className="hidden sm:inline sm:ml-2">Lista</span>
-            </button>
-            <button onClick={() => setView('calendar')} className={`py-2 rounded-full text-sm font-semibold transition-all flex items-center justify-center ${view === 'calendar' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'} w-14 sm:w-auto sm:px-4`}>
-                <CalendarDaysIcon className="w-5 h-5" />
-                <span className="hidden sm:inline sm:ml-2">Calendario</span>
-            </button>
-            <button onClick={() => setView('costs')} className={`py-2 rounded-full text-sm font-semibold transition-all flex items-center justify-center ${view === 'costs' ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out' : 'text-slate-500'} w-14 sm:w-auto sm:px-4`}>
-                <CalculatorIcon className="w-5 h-5" />
-                <span className="hidden sm:inline sm:ml-2">Costos</span>
-            </button>
-          </div>
-
-          {view === 'list' && (
-            <>
-              <div className="mb-6 flex justify-center">
-                <div className="flex space-x-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-full shadow-neumo-light-in dark:shadow-neumo-dark-in">
-                  {filterOptions.map((option) => (
+        <main>
+            {nextFlightForCountdown && (
+                <NextTripCard flight={nextFlightForCountdown.flight} flightType={nextFlightForCountdown.type} />
+            )}
+            
+            <div className="flex justify-center mb-6 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-full shadow-neumo-light-in dark:shadow-neumo-dark-in">
+                <button onClick={() => setView('list')} className={`px-4 py-1.5 rounded-full text-sm font-semibold flex items-center space-x-2 transition-all duration-300 ${view === 'list' ? 'bg-white dark:bg-slate-700 shadow-md' : 'text-slate-500'}`}>
+                    <ListBulletIcon className="w-5 h-5" /><span>Lista</span>
+                </button>
+                <button onClick={() => setView('calendar')} className={`px-4 py-1.5 rounded-full text-sm font-semibold flex items-center space-x-2 transition-all duration-300 ${view === 'calendar' ? 'bg-white dark:bg-slate-700 shadow-md' : 'text-slate-500'}`}>
+                    <CalendarDaysIcon className="w-5 h-5" /><span>Calendario</span>
+                </button>
+                <button onClick={() => setView('costs')} className={`px-4 py-1.5 rounded-full text-sm font-semibold flex items-center space-x-2 transition-all duration-300 ${view === 'costs' ? 'bg-white dark:bg-slate-700 shadow-md' : 'text-slate-500'}`}>
+                    <CalculatorIcon className="w-5 h-5" /><span>Costos</span>
+                </button>
+            </div>
+            
+            {view === 'list' && (
+              <>
+                <div className="flex justify-center mb-6 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-full shadow-neumo-light-in dark:shadow-neumo-dark-in">
+                  {filterOptions.map(({ key, label }) => (
                     <button
-                      key={option.key}
-                      onClick={() => setListFilter(option.key)}
-                      className={`rounded-full transition-all flex items-center justify-center ${
-                        listFilter === option.key
-                          ? 'bg-white dark:bg-slate-700 shadow-neumo-light-out dark:shadow-neumo-dark-out'
-                          : 'text-slate-500'
-                      } w-12 h-12 sm:w-auto sm:h-auto sm:px-4 sm:py-1.5`}
-                      aria-label={option.label}
+                      key={key}
+                      onClick={() => setListFilter(key)}
+                      className={`px-3 py-1 text-xs sm:text-sm font-semibold rounded-full transition-all duration-300 ${listFilter === key ? 'bg-white dark:bg-slate-700 shadow-md' : 'text-slate-500'}`}
                     >
-                      {filterIcons[option.key]}
-                      <span className="hidden sm:inline sm:ml-2 text-xs font-semibold whitespace-nowrap">{option.label}</span>
+                      {label}
                     </button>
                   ))}
                 </div>
-              </div>
-              <TripList
-                trips={filteredTrips}
-                onDeleteTrip={handleDeleteTrip}
-                listFilter={listFilter}
-                nextTripId={nextUpcomingFlightInfo?.trip.id || null}
-                userId={user.uid}
-              />
-            </>
-          )}
-
-          {view === 'calendar' && <CalendarView trips={trips} />}
-          {view === 'costs' && <CostSummary trips={trips} />}
+                <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTrip?.id || null} userId={user.uid} />
+              </>
+            )}
+            {view === 'calendar' && <CalendarView trips={trips} />}
+            {view === 'costs' && <CostSummary trips={trips} />}
         </main>
         
         <div className="fixed bottom-6 right-6 z-40">
-          <div className="relative">
             {isFabMenuOpen && (
-              <div className="flex flex-col items-center space-y-3 mb-3">
-                <button onClick={handleAiImportClick} title="Importar con IA" className="w-14 h-14 rounded-full bg-slate-100 dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow">
-                  <MailIcon className="w-7 h-7" />
-                </button>
-                <button onClick={handleQuickAddClick} title="Agregar manualmente" className="w-14 h-14 rounded-full bg-slate-100 dark:bg-slate-700 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow">
-                  <PencilSquareIcon className="w-7 h-7" />
-                </button>
-              </div>
+                <div className="flex flex-col items-center space-y-3 mb-3">
+                    <button onClick={() => fabAction('quick')} className="group flex items-center space-x-2" aria-label="Agregar viaje manualmente">
+                        <span className="bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold px-3 py-1 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">Manual</span>
+                        <div className="w-14 h-14 rounded-full bg-sky-500 text-white flex items-center justify-center shadow-lg hover:bg-sky-600 transition-all transform hover:scale-110">
+                            <PencilSquareIcon className="w-7 h-7" />
+                        </div>
+                    </button>
+                    <button onClick={() => fabAction('ai')} className="group flex items-center space-x-2" aria-label="Agregar viaje con IA">
+                         <span className="bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold px-3 py-1 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">Con IA</span>
+                        <div className="w-14 h-14 rounded-full bg-teal-500 text-white flex items-center justify-center shadow-lg hover:bg-teal-600 transition-all transform hover:scale-110">
+                            <MailIcon className="w-7 h-7" />
+                        </div>
+                    </button>
+                </div>
             )}
-            <button onClick={() => setIsFabMenuOpen(!isFabMenuOpen)} className={`w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-lg transition-transform duration-300 ${isFabMenuOpen ? 'rotate-45' : ''}`}>
-              <PlusCircleIcon className="w-9 h-9" />
+            <button
+                onClick={() => setIsFabMenuOpen(!isFabMenuOpen)}
+                className={`w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-2xl transform transition-transform duration-300 ease-in-out ${isFabMenuOpen ? 'rotate-45' : ''}`}
+                aria-haspopup="true"
+                aria-expanded={isFabMenuOpen}
+                aria-label="Agregar nuevo viaje"
+            >
+                <PlusCircleIcon className="w-9 h-9" />
             </button>
-          </div>
         </div>
-
-        {isModalOpen && apiKey && (
-          <EmailImporter
-            apiKey={apiKey}
-            onClose={() => setIsModalOpen(false)}
-            onAddTrip={handleAddTrip}
-            onInvalidApiKey={handleInvalidApiKey}
-          />
-        )}
-        {isQuickAddModalOpen && (
-          <QuickAddModal
-            onClose={() => setIsQuickAddModalOpen(false)}
-            onAddTrip={handleAddTrip}
-          />
-        )}
-      </div>
     </div>
   );
 };

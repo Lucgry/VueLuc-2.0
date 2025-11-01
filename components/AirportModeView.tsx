@@ -44,9 +44,8 @@ const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightT
             setIsLoading(true);
             setError(null);
             try {
-                // FIX: Pass userId as the first argument to getBoardingPass.
-                const file = await getBoardingPass(userId, trip.id, flightType);
-                if (file) {
+                const { file, exists } = await getBoardingPass(userId, trip.id, flightType);
+                if (exists && file) {
                     const url = URL.createObjectURL(file);
                     setBoardingPassData({ fileURL: url, fileType: file.type });
                 } else {

@@ -14,53 +14,35 @@ export const saveBoardingPass = async (userId: string, tripId: string, flightTyp
     await uploadBytes(fileRef, file);
 };
 
-export const getBoardingPass = async (userId: string, tripId: string, flightType: 'ida' | 'vuelta'): Promise<File | null> => {
+export const getBoardingPass = async (userId: string, tripId: string, flightType: 'ida' | 'vuelta'): Promise<{ file: File; exists: true } | { file: null; exists: false }> => {
     if (!userId) throw new Error("Usuario no autenticado.");
     try {
         const fileRef = getFileRef(userId, tripId, flightType);
         
-        // Paso 1: Obtener una URL de descarga con un token de acceso temporal.
+        // Obtener una URL de descarga. Esto también sirve como una verificación de existencia.
+        // Si falla con 'storage/object-not-found', sabemos que el archivo no existe.
         const downloadUrl = await getDownloadURL(fileRef);
         
-        // Paso 2: Usar `fetch` para descargar el archivo. Esto evita la solicitud "preflight" de CORS
-        // que causaba el problema, ya que es una solicitud GET simple.
+        // Usar `fetch` para descargar el archivo para evitar problemas complejos de CORS.
         const response = await fetch(downloadUrl);
         if (!response.ok) {
             throw new Error(`Error al descargar el archivo: ${response.statusText}`);
         }
         const blob = await response.blob();
         
-        // Devolvemos el Blob, que es compatible con lo que el componente espera (File).
-        return blob as File;
+        return { file: blob as File, exists: true };
+
     } catch (error) {
         const firebaseError = error as FirebaseError;
         if (firebaseError.code === 'storage/object-not-found') {
             console.log('La tarjeta de embarque no se encontró en Storage.');
-            return null;
+            return { file: null, exists: false };
         }
         console.error('Error al obtener la tarjeta de embarque de Firebase Storage:', error);
         throw error;
     }
 };
 
-export const checkBoardingPassExists = async (userId: string, tripId: string, flightType: 'ida' | 'vuelta'): Promise<boolean> => {
-    if (!userId) return false;
-    const fileRef = getFileRef(userId, tripId, flightType);
-    try {
-        // Con la configuración CORS aplicada en el bucket, getMetadata funcionará correctamente.
-        // Es una forma más directa y semánticamente correcta de verificar la existencia de un archivo.
-        await getMetadata(fileRef);
-        return true;
-    } catch (error) {
-        const firebaseError = error as FirebaseError;
-        if (firebaseError.code === 'storage/object-not-found') {
-            return false;
-        }
-        // Este error de CORS ya no debería ocurrir, pero mantenemos el log por si acaso.
-        console.error('Error al verificar la existencia de la tarjeta de embarque:', error);
-        return false;
-    }
-};
 
 export const deleteBoardingPass = async (userId: string, tripId: string, flightType: 'ida' | 'vuelta'): Promise<void> => {
     if (!userId) throw new Error("Usuario no autenticado.");

@@ -6,7 +6,7 @@ import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { ExclamationTriangleIcon } from './icons/ExclamationTriangleIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { ShareIcon } from './icons/ShareIcon';
-import { saveBoardingPass, getBoardingPass, deleteBoardingPass, checkBoardingPassExists } from '../services/db';
+import { saveBoardingPass, getBoardingPass, deleteBoardingPass } from '../services/db';
 import BoardingPassViewer from './BoardingPassViewer';
 import { DocumentPlusIcon } from './icons/DocumentPlusIcon';
 import { DocumentTextIcon } from './icons/DocumentTextIcon';
@@ -114,7 +114,7 @@ type DeletionState = 'idle' | 'confirming' | 'deleting';
 const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, userId }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [copied, setCopied] = useState(false);
-    const [passStatus, setPassStatus] = useState({ ida: false, vuelta: false });
+    const [passStatus, setPassStatus] = useState<{ ida: boolean | 'loading', vuelta: boolean | 'loading' }>({ ida: 'loading', vuelta: 'loading' });
     const [deletingStatus, setDeletingStatus] = useState<{ ida: DeletionState, vuelta: DeletionState }>({ ida: 'idle', vuelta: 'idle' });
     const [tripDeletionState, setTripDeletionState] = useState<'idle' | 'confirming'>('idle');
     const [viewingBoardingPass, setViewingBoardingPass] = useState<BoardingPassData | null>(null);
@@ -123,12 +123,13 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
 
     useEffect(() => {
         if (isExpanded) {
+            setPassStatus({ ida: 'loading', vuelta: 'loading' });
             const checkPasses = async () => {
-                const [idaExists, vueltaExists] = await Promise.all([
-                    checkBoardingPassExists(userId, trip.id, 'ida'),
-                    checkBoardingPassExists(userId, trip.id, 'vuelta'),
+                const [idaResult, vueltaResult] = await Promise.all([
+                    getBoardingPass(userId, trip.id, 'ida'),
+                    getBoardingPass(userId, trip.id, 'vuelta'),
                 ]);
-                setPassStatus({ ida: idaExists, vuelta: vueltaExists });
+                setPassStatus({ ida: idaResult.exists, vuelta: vueltaResult.exists });
             };
             checkPasses();
         }
@@ -144,12 +145,14 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
         const file = event.target.files?.[0];
         const flightType = flightTypeToUpload.current;
         if (file && flightType) {
+            setPassStatus(prev => ({ ...prev, [flightType]: 'loading' }));
             try {
                 await saveBoardingPass(userId, trip.id, flightType, file);
                 setPassStatus(prev => ({ ...prev, [flightType]: true }));
             } catch (error) {
                 console.error("Error saving boarding pass:", error);
                 alert("No se pudo guardar la tarjeta de embarque.");
+                setPassStatus(prev => ({ ...prev, [flightType]: false }));
             }
         }
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -158,8 +161,8 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
     const handleViewBoardingPass = async (e: React.MouseEvent, flightType: 'ida' | 'vuelta') => {
         e.stopPropagation();
         try {
-            const file = await getBoardingPass(userId, trip.id, flightType);
-            if (file) {
+            const { file, exists } = await getBoardingPass(userId, trip.id, flightType);
+            if (exists && file) {
                 const url = URL.createObjectURL(file);
                 setViewingBoardingPass({ fileURL: url, fileType: file.type });
             } else {
@@ -195,6 +198,56 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
         e.stopPropagation();
         setDeletingStatus(prev => ({ ...prev, [flightType]: 'idle' }));
     };
+    
+    const BoardingPassButton: React.FC<{flightType: 'ida' | 'vuelta'}> = ({flightType}) => {
+        const status = passStatus[flightType];
+
+        if (status === 'loading') {
+            return (
+                <div className="w-full flex items-center justify-center py-2">
+                    <Spinner />
+                </div>
+            );
+        }
+
+        if (status) {
+             if (deletingStatus[flightType] === 'confirming') {
+                return (
+                    <div className="flex items-center space-x-2 bg-red-100 dark:bg-red-900/50 p-2 rounded-lg">
+                        <span className="text-sm font-semibold text-red-800 dark:text-red-200 flex-grow text-center">¿Seguro?</span>
+                        <button onClick={(e) => executeDelete(e, flightType)} className="text-sm font-bold px-4 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition">Sí</button>
+                        <button onClick={(e) => cancelDelete(e, flightType)} className="text-sm font-medium px-4 py-1.5 rounded-md bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500 transition">No</button>
+                    </div>
+                );
+            }
+            return (
+                <div className="flex space-x-2">
+                    <button 
+                        onClick={(e) => handleViewBoardingPass(e, flightType)} 
+                        className="flex-grow text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-green-700 dark:text-green-300 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200"
+                        disabled={deletingStatus[flightType] === 'deleting'}
+                    >
+                        <DocumentTextIcon className="h-5 w-5" /><span>Ver Tarjeta</span>
+                    </button>
+                    <button 
+                        onClick={(e) => handleDeleteBoardingPass(e, flightType)} 
+                        className="flex-shrink-0 p-2 rounded-lg text-red-600 dark:text-red-400 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200 flex items-center justify-center w-[40px]" 
+                        aria-label={`Eliminar tarjeta de embarque de ${flightType}`}
+                        disabled={deletingStatus[flightType] === 'deleting'}
+                    >
+                        {deletingStatus[flightType] === 'deleting' ? <Spinner /> : <TrashIcon className="h-5 w-5" />}
+                    </button>
+                </div>
+            );
+        }
+
+        return (
+            <button onClick={(e) => handleAddBoardingPassClick(e, flightType)} className="w-full text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-lg shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200">
+                <DocumentPlusIcon className="h-5 w-5" /><span>Agregar Tarjeta</span>
+            </button>
+        );
+    };
+
 
     const idaFlight = trip.departureFlight;
     const vueltaFlight = trip.returnFlight;
@@ -361,37 +414,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                             {idaFlight && (
                                 <div className="flex-1 space-y-3">
                                     <FlightInfo flight={idaFlight} type="Ida" />
-                                    {passStatus.ida ? (
-                                        deletingStatus.ida === 'confirming' ? (
-                                            <div className="flex items-center space-x-2 bg-red-100 dark:bg-red-900/50 p-2 rounded-lg">
-                                                <span className="text-sm font-semibold text-red-800 dark:text-red-200 flex-grow text-center">¿Seguro?</span>
-                                                <button onClick={(e) => executeDelete(e, 'ida')} className="text-sm font-bold px-4 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition">Sí</button>
-                                                <button onClick={(e) => cancelDelete(e, 'ida')} className="text-sm font-medium px-4 py-1.5 rounded-md bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500 transition">No</button>
-                                            </div>
-                                        ) : (
-                                            <div className="flex space-x-2">
-                                                <button 
-                                                    onClick={(e) => handleViewBoardingPass(e, 'ida')} 
-                                                    className="flex-grow text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-green-700 dark:text-green-300 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200"
-                                                    disabled={deletingStatus.ida === 'deleting'}
-                                                >
-                                                    <DocumentTextIcon className="h-5 w-5" /><span>Ver Tarjeta</span>
-                                                </button>
-                                                <button 
-                                                    onClick={(e) => handleDeleteBoardingPass(e, 'ida')} 
-                                                    className="flex-shrink-0 p-2 rounded-lg text-red-600 dark:text-red-400 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200 flex items-center justify-center w-[40px]" 
-                                                    aria-label="Eliminar tarjeta de embarque de ida"
-                                                    disabled={deletingStatus.ida === 'deleting'}
-                                                >
-                                                    {deletingStatus.ida === 'deleting' ? <Spinner /> : <TrashIcon className="h-5 w-5" />}
-                                                </button>
-                                            </div>
-                                        )
-                                    ) : (
-                                        <button onClick={(e) => handleAddBoardingPassClick(e, 'ida')} className="w-full text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-lg shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200">
-                                            <DocumentPlusIcon className="h-5 w-5" /><span>Agregar Tarjeta</span>
-                                        </button>
-                                    )}
+                                    <BoardingPassButton flightType="ida" />
                                 </div>
                             )}
 
@@ -402,37 +425,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                             {vueltaFlight && (
                                 <div className="flex-1 space-y-3">
                                     <FlightInfo flight={vueltaFlight} type="Vuelta" />
-                                    {passStatus.vuelta ? (
-                                         deletingStatus.vuelta === 'confirming' ? (
-                                            <div className="flex items-center space-x-2 bg-red-100 dark:bg-red-900/50 p-2 rounded-lg">
-                                                <span className="text-sm font-semibold text-red-800 dark:text-red-200 flex-grow text-center">¿Seguro?</span>
-                                                <button onClick={(e) => executeDelete(e, 'vuelta')} className="text-sm font-bold px-4 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition">Sí</button>
-                                                <button onClick={(e) => cancelDelete(e, 'vuelta')} className="text-sm font-medium px-4 py-1.5 rounded-md bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500 transition">No</button>
-                                            </div>
-                                        ) : (
-                                            <div className="flex space-x-2">
-                                                <button 
-                                                    onClick={(e) => handleViewBoardingPass(e, 'vuelta')} 
-                                                    className="flex-grow text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-green-700 dark:text-green-300 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200"
-                                                    disabled={deletingStatus.vuelta === 'deleting'}
-                                                >
-                                                    <DocumentTextIcon className="h-5 w-5" /><span>Ver Tarjeta</span>
-                                                </button>
-                                                <button 
-                                                    onClick={(e) => handleDeleteBoardingPass(e, 'vuelta')} 
-                                                    className="flex-shrink-0 p-2 rounded-lg text-red-600 dark:text-red-400 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200 flex items-center justify-center w-[40px]" 
-                                                    aria-label="Eliminar tarjeta de embarque de vuelta"
-                                                    disabled={deletingStatus.vuelta === 'deleting'}
-                                                >
-                                                    {deletingStatus.vuelta === 'deleting' ? <Spinner /> : <TrashIcon className="h-5 w-5" />}
-                                                </button>
-                                            </div>
-                                        )
-                                    ) : (
-                                        <button onClick={(e) => handleAddBoardingPassClick(e, 'vuelta')} className="w-full text-sm font-semibold flex items-center justify-center space-x-2 py-2 px-3 rounded-lg shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200">
-                                            <DocumentPlusIcon className="h-5 w-5" /><span>Agregar Tarjeta</span>
-                                        </button>
-                                    )}
+                                    <BoardingPassButton flightType="vuelta" />
                                 </div>
                             )}
                         </div>

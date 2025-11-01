@@ -3,13 +3,11 @@ import { getAuth, GoogleAuthProvider, Auth } from "firebase/auth";
 import { getFirestore, Firestore } from "firebase/firestore";
 import { getStorage, FirebaseStorage } from "firebase/storage";
 
-// Configuración de Firebase con los valores proporcionados por el usuario.
-// Con esto la app se conectará correctamente.
 const firebaseConfig = {
   apiKey: "AIzaSyCDATMtZNX786iBxSvWkIRGxowpF-GNN_I",
   authDomain: "vueluc-app.firebaseapp.com",
   projectId: "vueluc-app",
-  storageBucket: "vueluc-app.appspot.com",
+  storageBucket: "vueluc-app.firebasestorage.app",
   messagingSenderId: "463918423785",
   appId: "1:463918423785:web:80bb4c924bdcf4b37e5a78"
 };
@@ -23,6 +21,7 @@ let storage: FirebaseStorage | null = null;
 let googleProvider: GoogleAuthProvider | null = null;
 let isFirebaseInitialized = false;
 let firebaseInitializationError: { message: string; link?: { url: string; text: string; }; } | null = null;
+const projectId = firebaseConfig.projectId;
 
 if (hasAllConfigValues) {
     try {
@@ -54,4 +53,4 @@ if (hasAllConfigValues) {
     console.warn(firebaseInitializationError.message);
 }
 
-export { auth, db, storage, googleProvider, isFirebaseInitialized, firebaseInitializationError };
+export { auth, db, storage, googleProvider, isFirebaseInitialized, firebaseInitializationError, projectId };
