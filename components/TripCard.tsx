@@ -125,11 +125,17 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
         if (isExpanded) {
             setPassStatus({ ida: 'loading', vuelta: 'loading' });
             const checkPasses = async () => {
-                const [idaResult, vueltaResult] = await Promise.all([
-                    getBoardingPass(userId, trip.id, 'ida'),
-                    getBoardingPass(userId, trip.id, 'vuelta'),
-                ]);
-                setPassStatus({ ida: idaResult.exists, vuelta: vueltaResult.exists });
+                try {
+                    const [idaResult, vueltaResult] = await Promise.all([
+                        getBoardingPass(userId, trip.id, 'ida'),
+                        getBoardingPass(userId, trip.id, 'vuelta'),
+                    ]);
+                    setPassStatus({ ida: idaResult.exists, vuelta: vueltaResult.exists });
+                } catch (error) {
+                    console.error("Error checking for boarding passes, likely a permissions issue:", error);
+                    // If we can't check, assume they don't exist so the user can try to upload.
+                    setPassStatus({ ida: false, vuelta: false });
+                }
             };
             checkPasses();
         }
