@@ -112,9 +112,9 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
         const costsByMonth: { [monthIndex: number]: number } = {};
 
         for (const trip of tripsForSelectedYear) {
-            // Regla de negocio: La fecha que rige el gasto es la fecha de compra del pasaje.
-            const costDateStr = trip.purchaseDate || trip.createdAt;
-            if (!costDateStr) continue;
+            // Regla de negocio: La fecha que rige el gasto es ÚNICAMENTE la fecha de compra.
+            const costDateStr = trip.purchaseDate;
+            if (!costDateStr) continue; // Si no hay fecha de compra, el viaje no se cuenta en este desglose.
 
             const purchaseDate = new Date(costDateStr);
             const monthIndex = purchaseDate.getMonth(); // 0 para Enero, 11 para Diciembre
