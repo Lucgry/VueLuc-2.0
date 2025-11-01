@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { auth, googleProvider, projectId } from '../firebase';
+import { auth, googleProvider, projectId, authDomain } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { GoogleIcon } from './icons/GoogleIcon';
 import { BoltIcon } from './icons/BoltIcon';
 import { InformationCircleIcon } from './icons/InformationCircleIcon';
 
 const LoginScreen: React.FC = () => {
-  const [error, setError] = useState<{ message: string; link?: { url: string; text: string; } } | null>(null);
+  const [error, setError] = useState<{ message: string; link?: { url: string; text: string; }; instructions?: { text: string; urls: string[] } } | null>(null);
 
   const handleGoogleSignIn = async () => {
     setError(null);
@@ -21,11 +21,19 @@ const LoginScreen: React.FC = () => {
       const errorCode = err.code || '';
 
       if (errorMessage.includes('API_KEY_HTTP_REFERRER_BLOCKED') || errorMessage.includes('requests-from-referer')) {
+          const isDifferentDomain = authDomain && window.location.hostname !== authDomain;
           setError({
-              message: "Tu clave de API de Google Cloud está bloqueando las solicitudes de este sitio web. Para solucionarlo, debes autorizar este dominio en la configuración de tu clave de API.",
+              message: "Tu clave de API está bloqueando solicitudes. Para solucionarlo, debes autorizar los dominios correctos en la configuración de tu clave de API en Google Cloud.",
               link: {
                   url: `https://console.cloud.google.com/apis/credentials?project=${projectId}`,
                   text: 'Abrir configuración de credenciales'
+              },
+              instructions: {
+                  text: `En "Restricciones de sitios web", asegúrate de que AMBAS de las siguientes URLs estén en la lista. Si falta alguna, haz clic en "Añadir" para agregarla:`,
+                  urls: [
+                      window.location.origin,
+                      ...(isDifferentDomain ? [`https://${authDomain}`] : [])
+                  ]
               }
           });
       } else if (errorCode === 'auth/unauthorized-domain') {
@@ -67,15 +75,28 @@ const LoginScreen: React.FC = () => {
                                 href={error.link.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-block w-full px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm text-center"
+                                className="inline-block w-full px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active-shadow-neumo-dark-in text-sm text-center"
                             >
                                 {error.link.text} &rarr;
                             </a>
-                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                En "Restricciones de sitios web", haz clic en "Añadir" y pega esta URL: <br/>
-                                <strong className="select-all break-all">{window.location.origin}</strong>
-                           </p>
                        </div>
+                    )}
+                    {error.instructions && (
+                        <div className="mt-4">
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {error.instructions.text}
+                            </p>
+                            <ul className="mt-2 space-y-1">
+                                {error.instructions.urls.map(url => (
+                                    <li key={url} className="text-xs font-mono bg-slate-200 dark:bg-slate-700 p-1 rounded select-all break-all">
+                                        {`${url}/*`}
+                                    </li>
+                                ))}
+                            </ul>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                Asegúrate de agregar <code className="bg-slate-200 dark:bg-slate-700 p-0.5 rounded">{`/*`}</code> al final de cada URL para permitir cualquier ruta.
+                            </p>
+                        </div>
                     )}
                 </div>
             </div>

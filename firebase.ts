@@ -22,6 +22,7 @@ let googleProvider: GoogleAuthProvider | null = null;
 let isFirebaseInitialized = false;
 let firebaseInitializationError: { message: string; links?: { url: string; text: string; }[]; } | null = null;
 const projectId = firebaseConfig.projectId;
+const authDomain = firebaseConfig.authDomain;
 
 if (hasAllConfigValues) {
     try {
@@ -53,4 +54,4 @@ if (hasAllConfigValues) {
     console.warn(firebaseInitializationError.message);
 }
 
-export { auth, db, storage, googleProvider, isFirebaseInitialized, firebaseInitializationError, projectId };
+export { auth, db, storage, googleProvider, isFirebaseInitialized, firebaseInitializationError, projectId, authDomain };
