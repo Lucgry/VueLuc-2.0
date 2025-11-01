@@ -149,25 +149,17 @@ const App: React.FC = () => {
             if (isHttpError) {
               const isDifferentDomain = authDomain && window.location.hostname !== authDomain;
               const requiredDomains = [
-                  window.location.origin,
-                  ...(isDifferentDomain ? [`https://${authDomain}`] : [])
+                  `• https://${window.location.hostname}/*`,
+                  ...(isDifferentDomain ? [`• https://${authDomain}/*`] : [])
               ];
-              const domainInstructions = requiredDomains.map(d => `• ${d}/*`).join('\n');
+              const domainInstructions = requiredDomains.join('\n');
 
               setAuthRuntimeError({
-                message: `¡Casi listo! Tu inicio de sesión funcionó, pero la app no puede mantener la sesión segura.\n\nLa causa más común es que tu clave de API tiene **Restricciones de sitios web** que bloquean esta aplicación.\n\nPor favor, sigue estos pasos:\n1. Haz clic en "Revisar Restricciones de API Key".\n2. Busca la sección "Restricciones de sitios web".\n3. Asegúrate de que **TODAS** las siguientes URLs estén en la lista de sitios permitidos:\n\n${domainInstructions}\n\nSi el problema persiste, verifica que las APIs de Autenticación y STS estén habilitadas (pasos 2 y 3).`,
+                message: `¡Tu configuración parece **correcta**! Has añadido las URLs necesarias, pero el error persiste. Esto casi siempre se debe a uno de dos motivos:\n\n**1. Retraso en Google Cloud:** Los cambios en las claves de API a veces tardan hasta **5 minutos** en aplicarse globalmente.\n\n**2. Caché del Navegador:** Tu navegador puede estar usando una conexión antigua.\n\n**PLAN DE ACCIÓN:**\n\n**Paso A: Recarga Forzada (Muy Importante)**\nIntenta una recarga forzada para limpiar el caché. Presiona:\n• Windows/Linux: **Ctrl + Shift + R**\n• Mac: **Cmd + Shift + R**\n\n**Paso B: Verificación Final**\nRevisa una última vez que **TODAS** estas URLs estén **exactamente** como se muestran en tus "Restricciones de sitios web":\n\n${domainInstructions}\n\nSi después de esperar 5 minutos y hacer una recarga forzada el problema no se resuelve, el último paso es crear una nueva clave de API desde cero.`,
                 links: [
                     {
                         url: `https://console.cloud.google.com/apis/credentials?project=${projectId}`,
-                        text: '1. Revisar Restricciones de API Key'
-                    },
-                    {
-                        url: `https://console.cloud.google.com/apis/library/identitytoolkit.googleapis.com?project=${projectId}`,
-                        text: '2. Habilitar API de Autenticación (Opcional)'
-                    },
-                    {
-                        url: `https://console.cloud.google.com/apis/library/sts.googleapis.com?project=${projectId}`,
-                        text: '3. Habilitar API de Tokens (Opcional)'
+                        text: '1. Revisar mi Configuración de Nuevo'
                     }
                 ]
               });
