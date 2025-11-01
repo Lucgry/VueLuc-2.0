@@ -161,7 +161,7 @@ const CalendarView: React.FC<{ trips: Trip[] }> = ({ trips }) => {
             </h3>
             <div className="space-y-3">
               {flights.map(({ flight, trip, type }) => (
-                <div key={`${trip.id}-${type}`} className="flex items-center space-x-4 p-3 rounded-lg shadow-neumo-light-in dark:shadow-neumo-dark-in">
+                <div key={`${trip.id}-${type}`} className="flex items-center space-x-4 p-3 rounded-lg bg-slate-200/60 dark:bg-slate-700/60">
                   <div className="flex-shrink-0">
                       <AirlineLogo airline={flight.airline} size="sm" type="isotipo" />
                   </div>
@@ -195,18 +195,18 @@ const CalendarView: React.FC<{ trips: Trip[] }> = ({ trips }) => {
   };
 
   return (
-    <div ref={containerRef} className="relative bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out p-2 sm:p-4 md:p-6 min-h-[60vh]">
+    <div ref={containerRef} className="relative bg-slate-100 dark:bg-slate-800 rounded-xl shadow-sm dark:shadow-none p-2 sm:p-4 md:p-6 min-h-[60vh]">
       <div className="flex justify-between items-center mb-6">
-        <button onClick={handlePrevMonth} className="p-2 rounded-full shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200" aria-label="Mes anterior">&lt;</button>
+        <button onClick={handlePrevMonth} className="p-2 rounded-full bg-white dark:bg-slate-700 shadow-sm dark:shadow-none transition-shadow duration-200" aria-label="Mes anterior">&lt;</button>
         <h2 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-white capitalize text-center">
           {currentDate.toLocaleString('es-AR', { month: 'long', year: 'numeric' })}
         </h2>
         <div className="flex items-center space-x-2">
-            <div className="flex space-x-1 bg-slate-200 dark:bg-slate-900/50 p-1 rounded-xl shadow-neumo-light-in dark:shadow-neumo-dark-in">
-                <button onClick={() => setViewMode('agenda')} className={`p-1.5 rounded-lg transition-shadow duration-200 ${viewMode === 'agenda' ? 'shadow-neumo-light-in dark:shadow-neumo-dark-in text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}`} aria-label="Vista de agenda"><ListBulletIcon className="w-5 h-5"/></button>
-                <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-lg transition-shadow duration-200 ${viewMode === 'grid' ? 'shadow-neumo-light-in dark:shadow-neumo-dark-in text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}`} aria-label="Vista de cuadrícula"><Squares2x2Icon className="w-5 h-5"/></button>
+            <div className="flex space-x-1 bg-slate-200 dark:bg-slate-900/50 p-1 rounded-xl">
+                <button onClick={() => setViewMode('agenda')} className={`p-1.5 rounded-lg transition-all duration-200 ${viewMode === 'agenda' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}`} aria-label="Vista de agenda"><ListBulletIcon className="w-5 h-5"/></button>
+                <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-lg transition-all duration-200 ${viewMode === 'grid' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}`} aria-label="Vista de cuadrícula"><Squares2x2Icon className="w-5 h-5"/></button>
             </div>
-            <button onClick={handleNextMonth} className="p-2 rounded-full shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in transition-shadow duration-200" aria-label="Mes siguiente">&gt;</button>
+            <button onClick={handleNextMonth} className="p-2 rounded-full bg-white dark:bg-slate-700 shadow-sm dark:shadow-none transition-shadow duration-200" aria-label="Mes siguiente">&gt;</button>
         </div>
       </div>
 

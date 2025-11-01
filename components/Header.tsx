@@ -14,7 +14,7 @@ const Header: React.FC<HeaderProps> = ({ theme, onToggleTheme, isAirportMode, on
     
   return (
     <header className="flex justify-between items-center mb-8 py-2">
-       <div className="flex items-center space-x-2 bg-slate-800/50 backdrop-blur-md border border-slate-700/50 p-1 rounded-full shadow-lg">
+       <div className="flex items-center space-x-2 bg-white/60 dark:bg-slate-800/60 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/50 p-1 rounded-full shadow-lg">
         <button
           onClick={onToggleAirportMode}
           role="switch"
@@ -34,7 +34,7 @@ const Header: React.FC<HeaderProps> = ({ theme, onToggleTheme, isAirportMode, on
           {theme === 'light' ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
         </button>
       </div>
-      <h1 className="text-3xl md:text-5xl font-extrabold text-white tracking-tight [text-shadow:0_2px_5px_rgba(0,0,0,0.4)]">
+      <h1 className="text-3xl md:text-5xl font-extrabold text-slate-900 dark:text-white tracking-tight dark:[text-shadow:0_2px_5px_rgba(0,0,0,0.4)] [text-shadow:0_1px_2px_rgba(0,0,0,0.1)]">
         VueLuc
       </h1>
     </header>

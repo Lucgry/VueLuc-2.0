@@ -534,7 +534,7 @@ const App: React.FC = () => {
                 )}
 
                 <div className="mb-4">
-                    <div className="bg-slate-800/50 backdrop-blur-md border border-slate-700/50 p-1 rounded-full flex items-center justify-center space-x-1 max-w-sm mx-auto">
+                    <div className="bg-slate-200/70 dark:bg-slate-800/50 backdrop-blur-md border border-slate-300/80 dark:border-slate-700/50 p-1 rounded-full flex items-center justify-center space-x-1 max-w-sm mx-auto">
                         {([
                             { viewName: 'list', Icon: ListBulletIcon, label: 'Lista' },
                             { viewName: 'calendar', Icon: CalendarDaysIcon, label: 'Calendario' },
@@ -543,7 +543,7 @@ const App: React.FC = () => {
                             <button
                                 key={viewName}
                                 onClick={() => setView(viewName)}
-                                className={`w-full px-3 py-2 text-sm font-semibold rounded-full flex items-center justify-center space-x-2 transition-colors duration-300 ${view === viewName ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800/50'}`}
+                                className={`w-full px-3 py-2 text-sm font-semibold rounded-full flex items-center justify-center space-x-2 transition-all duration-300 ${view === viewName ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'}`}
                                 aria-pressed={view === viewName}
                             >
                                 <Icon className="h-5 w-5" />
@@ -555,12 +555,12 @@ const App: React.FC = () => {
 
                 {view === 'list' && (
                     <div className="mb-6 flex justify-center">
-                        <div className="bg-slate-800/50 backdrop-blur-md border border-slate-700/50 p-1 rounded-full flex items-center space-x-1">
+                        <div className="bg-slate-200/70 dark:bg-slate-800/50 backdrop-blur-md border border-slate-300/80 dark:border-slate-700/50 p-1 rounded-full flex items-center space-x-1">
                              {filterOptions.map(opt => (
                                 <button
                                     key={opt.key}
                                     onClick={() => setListFilter(opt.key)}
-                                    className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors duration-300 ${listFilter === opt.key ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800/50'}`}
+                                    className={`px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-300 ${listFilter === opt.key ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'}`}
                                     aria-pressed={listFilter === opt.key}
                                 >
                                     {opt.label}
@@ -587,7 +587,7 @@ const App: React.FC = () => {
                                             setIsQuickAddModalOpen(true);
                                             setIsFabMenuOpen(false);
                                         }}
-                                        className={`w-14 h-14 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 ease-in-out hover:scale-110 ${isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
+                                        className={`w-14 h-14 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 ease-in-out hover:scale-110 ${isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
                                         style={{ transitionDelay: isFabMenuOpen ? '150ms' : '0ms' }}
                                         aria-label="Agregar viaje manualmente"
                                     >
@@ -604,7 +604,7 @@ const App: React.FC = () => {
                                             setIsModalOpen(true);
                                             setIsFabMenuOpen(false);
                                         }}
-                                        className={`w-14 h-14 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 ease-in-out hover:scale-110 ${isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
+                                        className={`w-14 h-14 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 ease-in-out hover:scale-110 ${isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
                                          style={{ transitionDelay: isFabMenuOpen ? '100ms' : '50ms' }}
                                         aria-label="Agregar viaje con IA"
                                     >
