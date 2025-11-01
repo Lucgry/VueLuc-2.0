@@ -16,7 +16,7 @@ import { PencilSquareIcon } from './components/icons/PencilSquareIcon';
 import { MailIcon } from './components/icons/MailIcon';
 import { deleteBoardingPassesForTrip } from './services/db';
 import AirportModeView from './components/AirportModeView';
-// import ApiKeySetup from './components/ApiKeySetup';
+import ApiKeySetup from './components/ApiKeySetup';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { db, auth, isFirebaseInitialized, firebaseInitializationError, projectId } from './firebase';
 import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, updateDoc } from 'firebase/firestore';
@@ -169,6 +169,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [authRuntimeError, setAuthRuntimeError] = useState<{ message: string; links?: { url: string; text: string; }[] } | null>(null);
+  const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('gemini_api_key'));
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isQuickAddModalOpen, setIsQuickAddModalOpen] = useState(false);
@@ -285,6 +286,17 @@ const App: React.FC = () => {
     }
     localStorage.setItem('theme', theme);
   }, [theme]);
+  
+  const handleKeySave = (key: string) => {
+    localStorage.setItem('gemini_api_key', key);
+    setApiKey(key);
+  };
+  
+  const handleInvalidApiKey = () => {
+    localStorage.removeItem('gemini_api_key');
+    setApiKey(null);
+    alert('La API Key no es válida o ha expirado. Por favor, ingresa una nueva.');
+  };
 
   const handleToggleTheme = () => {
     setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
@@ -451,6 +463,10 @@ const App: React.FC = () => {
         return <LoginScreen />;
     }
     
+    if (!apiKey) {
+      return <ApiKeySetup onKeySave={handleKeySave} />;
+    }
+    
     if (isAirportMode && nextTripInfo && nextTripInfo.flight) {
         return (
             <AirportModeView 
@@ -524,7 +540,7 @@ const App: React.FC = () => {
                 {view === 'calendar' && <CalendarView trips={trips} />}
                 {view === 'costs' && <CostSummary trips={trips} />}
 
-                {isModalOpen && <EmailImporter onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} />}
+                {isModalOpen && <EmailImporter onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} apiKey={apiKey} onInvalidApiKey={handleInvalidApiKey} />}
                 {isQuickAddModalOpen && <QuickAddModal onClose={() => setIsQuickAddModalOpen(false)} onAddTrip={handleAddTrip} />}
 
                 <div className="fixed bottom-6 right-6 z-40">

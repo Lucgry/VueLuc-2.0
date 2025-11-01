@@ -32,8 +32,11 @@ const tripSchema = {
   required: ["bookingReference", "flights"]
 };
 
-// FIX: Removed apiKey parameter to adhere to security guidelines. The key is now sourced from environment variables.
-export const parseFlightEmail = async (emailText: string, pdfBase64?: string | null): Promise<Omit<Trip, 'id' | 'createdAt'>> => {
+export const parseFlightEmail = async (apiKey: string, emailText: string, pdfBase64?: string | null): Promise<Omit<Trip, 'id' | 'createdAt'>> => {
+  if (!apiKey) {
+    throw new Error("An API Key must be set when running in a browser");
+  }
+
   const pdfInstruction = pdfBase64 
     ? `
     DATOS DEL PDF ADJUNTO:
@@ -59,8 +62,7 @@ export const parseFlightEmail = async (emailText: string, pdfBase64?: string | n
   `;
 
   try {
-    // FIX: Initialize GoogleGenAI with the API key from environment variables, as per guidelines.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
 
     const parts: Part[] = [
       { text: instructions },
@@ -133,11 +135,12 @@ export const parseFlightEmail = async (emailText: string, pdfBase64?: string | n
   } catch (error) {
     console.error("Error parsing flight email with Gemini:", error);
     const message = error instanceof Error ? error.message : "An unknown error occurred during parsing.";
-    // FIX: Updated error message as the user can no longer configure the API key in the UI.
-    if (message.includes('API key not valid') || message.includes('API key is invalid') || message.includes('Requested entity was not found')) {
-        throw new Error("La API Key no es válida o no tiene los permisos necesarios.");
+    if (message.includes('API key not valid') || message.includes('API key is invalid') || message.includes('API key is forbidden') || message.includes('403') || message.includes('Requested entity was not found')) {
+        throw new Error("La API Key no es válida.");
     }
-    // FIX: Removed obsolete error check for missing API key.
+    if (message.includes('An API Key must be set')) {
+        throw new Error(message);
+    }
     if (message.includes('JSON')) {
         throw new Error("La IA no pudo procesar el email. Asegúrate de que el texto copiado sea claro y contenga los detalles del vuelo.");
     }
