@@ -65,36 +65,36 @@ const FlightInfo: React.FC<{ flight: Flight; type: 'Ida' | 'Vuelta' }> = ({ flig
   return (
     <div className="flex-1">
       <div className="flex justify-between items-center mb-2">
-        <div className="flex items-center space-x-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400">
+        <div className="flex items-center space-x-2 text-sm font-semibold text-indigo-400">
           <TicketIcon className="h-5 w-5" />
           <span>{type}</span>
         </div>
       </div>
       
-      <div className="text-center text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2 capitalize">
+      <div className="text-center text-sm font-semibold text-slate-400 mb-2 capitalize">
         {formatDate(flight.departureDateTime)}
       </div>
 
       <div className="flex items-center justify-between space-x-2">
         <div className="text-center">
           <p className="text-2xl font-bold">{formatTime(flight.departureDateTime)}</p>
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">{flight.departureAirportCode}</p>
+          <p className="text-sm font-semibold text-slate-300">{flight.departureAirportCode}</p>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center">
-             <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-slate-300 dark:via-slate-600 to-transparent"></div>
+             <div className="w-full h-px bg-slate-700/50"></div>
              <div className="text-center -mt-4">
-                <div className="p-1 rounded-full bg-slate-800 shadow-inner">
+                <div className="p-1 rounded-full bg-slate-900/50">
                     <AirlineLogo airline={flight.airline} size="sm" type="isotipo" />
                 </div>
-                {flight.flightNumber && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{flight.flightNumber}</p>}
+                {flight.flightNumber && <p className="text-xs text-slate-400 mt-1">{flight.flightNumber}</p>}
              </div>
         </div>
         <div className="text-center">
           <p className="text-2xl font-bold">{formatTime(flight.arrivalDateTime)}</p>
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">{flight.arrivalAirportCode}</p>
+          <p className="text-sm font-semibold text-slate-300">{flight.arrivalAirportCode}</p>
         </div>
       </div>
-       <div className="text-center text-xs text-slate-500 dark:text-slate-400 mt-1">
+       <div className="text-center text-xs text-slate-400 mt-1">
             {flight.departureCity} &rarr; {flight.arrivalCity}
         </div>
     </div>
@@ -360,7 +360,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                 }}
             />
         )}
-        <div className={`relative bg-slate-800/50 dark:bg-slate-800/50 rounded-xl transition-all duration-300 border border-slate-700/50 ${isPast ? 'opacity-60 hover:opacity-100' : ''} ${isNext ? 'ring-2 ring-purple-500' : ''}`}>
+        <div className={`relative bg-slate-800/50 rounded-xl transition-all duration-300 border border-slate-700/50 ${isPast ? 'opacity-60 hover:opacity-100' : ''} ${isNext ? 'ring-2 ring-purple-500' : ''}`}>
              <div 
                 className="p-4 cursor-pointer"
                 onClick={() => setIsExpanded(!isExpanded)}
@@ -368,14 +368,14 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                 <div className="flex flex-col space-y-1.5">
                     {/* --- Row 1: Date & Time --- */}
                     <div className="flex justify-between items-start">
-                        <div className="font-bold text-lg text-slate-800 dark:text-slate-200 capitalize">
+                        <div className="font-bold text-lg text-slate-200 capitalize">
                            {idaFlight && vueltaFlight ? (
                                 <span>{formatCompactDate(idaDate)} &rarr; {formatCompactDate(vueltaDate)}</span>
                            ) : (
                                 <span>{formatDate(idaDate || vueltaDate)}</span>
                            )}
                         </div>
-                        <p className="text-lg font-bold text-slate-800 dark:text-slate-200">{formatTime(tripDate)}</p>
+                        <p className="text-lg font-bold text-slate-200">{formatTime(tripDate)}</p>
                     </div>
 
                     {/* --- Row 2: Logos & Details --- */}
@@ -391,7 +391,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                             )}
                         </div>
                         <div className="flex items-center justify-end space-x-2">
-                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{tripTypeText}</p>
+                            <p className="text-xs font-medium text-slate-400">{tripTypeText}</p>
                             {trip.bookingReference && <p className="font-mono bg-slate-700 px-2 py-0.5 rounded-md text-xs font-semibold">{trip.bookingReference}</p>}
                             <ChevronDownIcon className={`h-6 w-6 text-slate-500 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
                         </div>
@@ -407,7 +407,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                 </div>
             </div>
 
-            <div className={`transition-[max-height] duration-500 ease-in-out overflow-hidden ${isExpanded ? 'max-h-[600px]' : 'max-h-0'}`}>
+            <div className={`transition-[max-height] duration-500 ease-in-out overflow-hidden ${isExpanded ? 'max-h-[800px]' : 'max-h-0'}`}>
                 <div className="px-4 pb-4">
                     <div className="rounded-lg p-4 bg-slate-900/50">
                          <div className="flex flex-col md:flex-row md:space-x-6 space-y-4 md:space-y-0">
@@ -419,7 +419,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                             )}
 
                             {idaFlight && vueltaFlight && (
-                            <div className="border-r border-dashed border-slate-600 hidden md:block"></div>
+                            <div className="border-r border-dashed border-slate-700 hidden md:block"></div>
                             )}
                             
                             {vueltaFlight && (
@@ -431,8 +431,8 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                         </div>
                     </div>
                     
-                    <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between items-center">
-                        <div className="text-sm space-y-1 text-slate-300">
+                    <div className="mt-4 pt-4 border-t border-slate-700 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+                        <div className="text-sm space-y-1 text-slate-300 w-full sm:w-auto">
                            {idaFlight?.cost != null && (
                                 <p><strong>Costo Ida:</strong> ${idaFlight.cost.toLocaleString('es-AR')} ({formatPaymentMethod(idaFlight.paymentMethod)})</p>
                            )}
@@ -440,7 +440,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                                 <p><strong>Costo Vuelta:</strong> ${vueltaFlight.cost.toLocaleString('es-AR')} ({formatPaymentMethod(vueltaFlight.paymentMethod)})</p>
                            )}
                         </div>
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-2 w-full justify-end sm:w-auto">
                            {tripDeletionState === 'confirming' ? (
                                 <div className="flex items-center space-x-2 bg-red-900/50 p-2 rounded-lg w-full justify-center">
                                     <span className="text-sm font-semibold text-red-200">¿Eliminar?</span>
@@ -454,7 +454,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                                  <span>{copied ? '¡Copiado!' : 'Compartir'}</span>
                             </button>
                             <button onClick={(e) => { e.stopPropagation(); setTripDeletionState('confirming'); }} className="text-slate-400 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-700/50 hover:bg-slate-700">
-                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                 <TrashIcon className="h-4 w-4" />
                                  <span>Eliminar</span>
                             </button>
                             </>
