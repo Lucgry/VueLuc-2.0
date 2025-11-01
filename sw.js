@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vueluc-cache-v2'; // Versión actualizada para forzar la actualización
+const CACHE_NAME = 'vueluc-cache-v3'; // Versión actualizada para forzar la actualización del icono
 const urlsToCache = [
   '/',
   '/index.html',

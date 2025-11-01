@@ -1,47 +1,35 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="512" height="512" rx="96" fill="url(#paint0_linear_new_icon)"/>
-
-<!-- Shadow -->
-<path d="M208 138.667 L405.333 224 L495.333 269 L409.333 461.333 L384 404 H156 L144 392 V248 L208 215.333 V138.667 Z" fill="#000000" opacity="0.15"/>
-
-
-<!-- Icon -->
-<g>
-    <!-- Calendar -->
-    <g>
-        <path d="M144 248 H384 V384 L364 404 H156 L144 392 V248 Z" fill="white"/>
-        <path d="M364 404 L384 384 V404 H364Z" fill="#E5E7EB"/>
-        <rect x="184" y="216" width="32" height="24" rx="4" fill="white"/>
-        <rect x="296" y="216" width="32" height="24" rx="4" fill="white"/>
-        <g fill="#E5E7EB">
-            <rect x="168" y="280" width="40" height="20" rx="4"/><rect x="224" y="280" width="40" height="20" rx="4"/><rect x="280" y="280" width="40" height="20" rx="4"/><rect x="336" y="280" width="24" height="20" rx="4"/>
-            <rect x="168" y="316" width="40" height="20" rx="4"/><rect x="224" y="316" width="40" height="20" rx="4"/><rect x="280" y="316" width="40" height="20" rx="4"/><rect x="336" y="316" width="24" height="20" rx="4"/>
-            <rect x="168" y="352" width="40" height="20" rx="4"/><rect x="224" y="352" width="40" height="20" rx="4"/><rect x="280" y="352" width="40" height="20" rx="4"/><rect x="336" y="352" width="24" height="20" rx="4"/>
+    <defs>
+        <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+            <feDropShadow dx="4" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.2"/>
+        </filter>
+    </defs>
+    <!-- Background -->
+    <rect width="512" height="512" rx="96" fill="#1E3A8A"/>
+    <!-- Swoosh -->
+    <path d="M-10 490 C 150 490, 320 280, 522 350 V 512 H -10 Z" fill="#38BDF8"/>
+    <!-- Icons Group with Shadow -->
+    <g filter="url(#shadow)">
+        <!-- Calendar -->
+        <g transform="translate(112, 160)">
+            <!-- Body -->
+            <path d="M16 0 C 7.163 0 0 7.163 0 16 V 176 C 0 184.837 7.163 192 16 192 H 176 C 184.837 192 192 184.837 192 176 V 16 C 192 7.163 184.837 0 176 0 H 16 Z" fill="white"/>
+            <!-- Rings -->
+            <path d="M32 -24 V 12 H 48 V -24 H 32 Z M 72 -24 V 12 H 88 V -24 H 72 Z M 112 -24 V 12 H 128 V -24 H 112 Z M 152 -24 V 12 H 168 V -24 H 152 Z" fill="white"/>
+            <!-- Grid -->
+            <g fill="#E0E7FF">
+                <rect x="24" y="48" width="32" height="24" rx="4"/> <rect x="72" y="48" width="32" height="24" rx="4"/> <rect x="120" y="48" width="32" height="24" rx="4"/>
+                <rect x="24" y="90" width="32" height="24" rx="4"/> <rect x="72" y="90" width="32" height="24" rx="4"/> <rect x="120" y="90" width="32" height="24" rx="4"/>
+                <rect x="24" y="132" width="32" height="24" rx="4"/> <rect x="72" y="132" width="32" height="24" rx="4"/> <rect x="120" y="132" width="32" height="24" rx="4"/>
+            </g>
+        </g>
+        
+        <!-- Paper Plane -->
+        <g>
+            <!-- Bottom wing/body (darker shade) -->
+            <path d="M280 128 L 440 208 L 280 288 L 312 208 L 280 128 Z" fill="#F3F4F6"/>
+            <!-- Top wing (lighter) -->
+            <path d="M280 128 L 440 208 L 312 208 Z" fill="white"/>
         </g>
     </g>
-
-    <!-- Paper Plane -->
-    <g>
-        <path d="M208 138.667L405.333 224L309.333 256L261.333 341.333L208 138.667Z" fill="white"/>
-        <path d="M405.333 224L309.333 256L208 138.667" fill="#F3F4F6"/>
-    </g>
-    
-    <!-- Trail -->
-    <g stroke="white" stroke-width="12" stroke-linecap="round">
-        <path d="M208 240L154.667 266.667"/>
-        <path d="M224 261.333L181.333 282.667"/>
-    </g>
-    
-    <!-- W circle -->
-    <g>
-      <circle cx="165.333" cy="298.667" r="24" fill="white"/>
-      <text x="165.333" y="309.667" font-family="Inter, sans-serif" font-size="28" font-weight="900" text-anchor="middle" fill="#7E22CE">W</text>
-    </g>
-</g>
-<defs>
-<linearGradient id="paint0_linear_new_icon" x1="0" y1="512" x2="512" y2="0" gradientUnits="userSpaceOnUse">
-<stop stop-color="#8F5CF6"/>
-<stop offset="1" stop-color="#5B21B6"/>
-</linearGradient>
-</defs>
 </svg>
