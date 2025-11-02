@@ -74,6 +74,11 @@ const FlightInfo: React.FC<{ flight: Flight; type: 'Ida' | 'Vuelta' }> = ({ flig
           <TicketIcon className="h-5 w-5" />
           <span>{type}</span>
         </div>
+        {flight.bookingReference && (
+            <div className="font-mono bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-md text-xs font-semibold">
+                {flight.bookingReference}
+            </div>
+        )}
       </div>
       
       <div className="text-center text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2 capitalize">
