@@ -14,7 +14,7 @@ import InstallBanner from './components/InstallBanner';
 import QuickAddModal from './components/QuickAddModal';
 import { PencilSquareIcon } from './components/icons/PencilSquareIcon';
 import { MailIcon } from './components/icons/MailIcon';
-import { deleteBoardingPassesForTrip } from './services/db';
+import { deleteBoardingPassesForTrip, getBoardingPass, saveBoardingPass, deleteBoardingPass } from './services/db';
 import AirportModeView from './components/AirportModeView';
 import ApiKeySetup from './components/ApiKeySetup';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -179,6 +179,7 @@ const App: React.FC = () => {
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallBannerVisible, setIsInstallBannerVisible] = useState(false);
   const [isAirportMode, setIsAirportMode] = useState(false);
+  const [groupingState, setGroupingState] = useState<{ active: boolean; sourceTrip: Trip | null }>({ active: false, sourceTrip: null });
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'light' || savedTheme === 'dark') {
@@ -438,6 +439,78 @@ const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
       sessionStorage.setItem('vueluc.bannerDismissed', 'true');
       setIsInstallBannerVisible(false);
   };
+    
+  // --- Manual Grouping Handlers ---
+  const handleStartGrouping = (trip: Trip) => {
+    setGroupingState({ active: true, sourceTrip: trip });
+  };
+
+  const handleCancelGrouping = () => {
+    setGroupingState({ active: false, sourceTrip: null });
+  };
+
+  const handleConfirmGrouping = async (targetTrip: Trip) => {
+      const sourceTrip = groupingState.sourceTrip;
+      if (!user || !db || !sourceTrip || !targetTrip || sourceTrip.id === targetTrip.id) {
+          handleCancelGrouping();
+          return;
+      }
+
+      const idaTrip = sourceTrip.departureFlight ? sourceTrip : targetTrip;
+      const vueltaTrip = sourceTrip.returnFlight ? sourceTrip : targetTrip;
+
+      // Validation
+      if (!idaTrip.departureFlight || !vueltaTrip.returnFlight || idaTrip.returnFlight || vueltaTrip.departureFlight) {
+          alert("Selección inválida. Debes seleccionar un viaje de solo ida y uno de solo vuelta para agrupar.");
+          handleCancelGrouping();
+          return;
+      }
+      
+      const confirmed = window.confirm("¿Estás seguro de que quieres unir estos dos tramos en un solo viaje de ida y vuelta?");
+      if (!confirmed) {
+          handleCancelGrouping();
+          return;
+      }
+
+      try {
+          const updatedData: Partial<Omit<Trip, 'id' | 'createdAt'>> = {
+              departureFlight: idaTrip.departureFlight,
+              returnFlight: vueltaTrip.returnFlight,
+          };
+          
+          if (idaTrip.purchaseDate && vueltaTrip.purchaseDate) {
+              updatedData.purchaseDate = new Date(idaTrip.purchaseDate) < new Date(vueltaTrip.purchaseDate) ? idaTrip.purchaseDate : vueltaTrip.purchaseDate;
+          } else {
+              updatedData.purchaseDate = idaTrip.purchaseDate || vueltaTrip.purchaseDate;
+          }
+
+          const idaTripRef = doc(db, 'users', user.uid, 'trips', idaTrip.id);
+          const vueltaTripRef = doc(db, 'users', user.uid, 'trips', vueltaTrip.id);
+
+          await updateDoc(idaTripRef, updatedData);
+          
+          // Move boarding pass from 'vuelta' trip doc to the merged 'ida' trip doc
+          const vueltaPass = await getBoardingPass(user.uid, vueltaTrip.id, 'vuelta');
+          if (vueltaPass.exists && vueltaPass.file) {
+              await saveBoardingPass(user.uid, idaTrip.id, 'vuelta', vueltaPass.file);
+          }
+          // Move boarding pass from 'ida' trip doc if it was the one being deleted
+           const idaPass = await getBoardingPass(user.uid, idaTrip.id, 'ida');
+          if (idaPass.exists && idaPass.file && sourceTrip.returnFlight) { // if the source was a 'vuelta'
+              await saveBoardingPass(user.uid, vueltaTrip.id, 'ida', idaPass.file);
+          }
+
+
+          await deleteDoc(vueltaTripRef);
+
+      } catch (error) {
+          console.error("Error al agrupar viajes:", error);
+          alert("Ocurrió un error al agrupar los viajes.");
+      } finally {
+          handleCancelGrouping();
+      }
+  };
+
 
   const sortedTrips = useMemo(() => {
       return [...trips].sort((a, b) => {
@@ -565,6 +638,22 @@ const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
                 onToggleAirportMode={handleToggleAirportMode}
             />
             <main className="pb-28">
+                {groupingState.active && (
+                    <div className="sticky top-2 z-30 mb-4 -mt-2">
+                        <div className="max-w-4xl mx-auto bg-indigo-600/95 backdrop-blur-md text-white p-3 rounded-xl shadow-lg flex justify-between items-center">
+                            <div>
+                                <h3 className="font-bold">Modo Agrupación</h3>
+                                <p className="text-sm">Selecciona un viaje compatible para unirlo.</p>
+                            </div>
+                            <button 
+                                onClick={handleCancelGrouping}
+                                className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-md font-semibold text-sm transition"
+                            >
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {isInstallBannerVisible && (
                 <InstallBanner 
                     onInstall={handleInstall} 
@@ -613,7 +702,7 @@ const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
                     </div>
                 )}
 
-                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripInfo?.trip.id ?? null} userId={user.uid} />}
+                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripInfo?.trip.id ?? null} userId={user.uid} groupingState={groupingState} onStartGrouping={handleStartGrouping} onConfirmGrouping={handleConfirmGrouping} />}
                 {view === 'calendar' && <CalendarView trips={trips} />}
                 {view === 'costs' && <CostSummary trips={trips} />}
 

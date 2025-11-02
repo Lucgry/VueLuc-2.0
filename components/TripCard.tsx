@@ -13,6 +13,11 @@ import { DocumentTextIcon } from './icons/DocumentTextIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { Spinner } from './Spinner';
 
+const LinkIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+  </svg>
+);
 
 const TicketIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -107,11 +112,14 @@ interface TripCardProps {
   isPast: boolean;
   isNext: boolean;
   userId: string;
+  groupingState: { active: boolean; sourceTrip: Trip | null };
+  onStartGrouping: (trip: Trip) => void;
+  onConfirmGrouping: (targetTrip: Trip) => void;
 }
 
 type DeletionState = 'idle' | 'confirming' | 'deleting';
 
-const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, userId }) => {
+const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, userId, groupingState, onStartGrouping, onConfirmGrouping }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [copied, setCopied] = useState(false);
     const [passStatus, setPassStatus] = useState<{ ida: boolean | 'loading', vuelta: boolean | 'loading' }>({ ida: 'loading', vuelta: 'loading' });
@@ -292,7 +300,6 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
     const idaAirline = trip.departureFlight?.airline;
     const vueltaAirline = trip.returnFlight?.airline;
     
-    // Robust logic for handling booking references
     const uniqueRefs = [...new Set([
         trip.departureFlight?.bookingReference,
         trip.returnFlight?.bookingReference
@@ -368,7 +375,31 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
             }
         }
     };
+    
+    const isOneWay = (!!trip.departureFlight) !== (!!trip.returnFlight);
+    const sourceTrip = groupingState.sourceTrip;
+    const isSelectedSource = groupingState.active && sourceTrip && trip.id === sourceTrip.id;
+    const isCompatibleTarget = groupingState.active && sourceTrip && isOneWay && trip.id !== sourceTrip.id && (!!sourceTrip.departureFlight !== !!trip.departureFlight);
 
+    let cardClasses = `relative bg-white dark:bg-slate-800 backdrop-blur-md rounded-xl transition-all duration-300 border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden ${isPast ? 'opacity-70 hover:opacity-100' : ''} ${isNext ? 'next-trip-glow' : ''}`;
+
+    if (groupingState.active) {
+        if (isSelectedSource) {
+            cardClasses += ' ring-4 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-900';
+        } else if (isCompatibleTarget) {
+            cardClasses += ' ring-2 ring-dashed ring-indigo-400 cursor-pointer hover:ring-indigo-500 hover:ring-solid';
+        } else {
+            cardClasses += ' opacity-40 grayscale';
+        }
+    }
+
+    const handleCardClick = () => {
+        if (isCompatibleTarget) {
+            onConfirmGrouping(trip);
+        } else if (!groupingState.active) {
+            setIsExpanded(!isExpanded);
+        }
+    };
 
     return (
         <>
@@ -391,10 +422,9 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                 }}
             />
         )}
-        <div className={`relative bg-white dark:bg-slate-800 backdrop-blur-md rounded-xl transition-all duration-300 border border-slate-200 dark:border-slate-700 shadow-lg ${isPast ? 'opacity-70 hover:opacity-100' : ''} ${isNext ? 'next-trip-glow' : ''} overflow-hidden`}>
+        <div className={cardClasses} onClick={handleCardClick}>
              <div 
-                className="p-4 cursor-pointer"
-                onClick={() => setIsExpanded(!isExpanded)}
+                className={`p-4 ${!groupingState.active && 'cursor-pointer'}`}
             >
                 <div className="flex flex-col space-y-2">
                     {/* --- Row 1: Date & Time --- */}
@@ -443,8 +473,8 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
 
             {status && status.type === 'bar' && !isExpanded && (
                 <div 
-                    className={`px-4 py-2 cursor-pointer ${status.barClass}`}
-                    onClick={() => setIsExpanded(!isExpanded)}
+                    className={`px-4 py-2 ${groupingState.active ? '' : 'cursor-pointer'} ${status.barClass}`}
+                    onClick={!groupingState.active ? () => setIsExpanded(!isExpanded) : undefined}
                 >
                     <div className={`flex items-center space-x-1.5 text-sm ${status.textClass}`}>
                         <status.Icon className={`h-5 w-5 ${status.iconColor}`} />
@@ -500,6 +530,12 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                                  <ShareIcon className="h-4 w-4" />
                                  <span>{copied ? '¡Copiado!' : 'Compartir'}</span>
                             </button>
+                            {isOneWay && !groupingState.active && (
+                                <button onClick={(e) => { e.stopPropagation(); onStartGrouping(trip); }} className="text-slate-600 dark:text-slate-300 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-700/50 dark:hover:bg-slate-700">
+                                    <LinkIcon className="h-4 w-4" />
+                                    <span>Agrupar</span>
+                                </button>
+                            )}
                             <button onClick={(e) => { e.stopPropagation(); setTripDeletionState('confirming'); }} className="text-slate-600 dark:text-slate-300 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-700/50 dark:hover:bg-slate-700">
                                  <TrashIcon className="h-4 w-4" />
                                  <span>Eliminar</span>
