@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import type { Flight } from '../types';
+import type { FlightLeg } from '../types';
 import { AirlineLogo } from './AirlineLogo';
 import { XCircleIcon } from './icons/XCircleIcon';
 
-
 interface NextTripCardProps {
-  flight: Flight;
-  flightType: 'ida' | 'vuelta';
+  flight: FlightLeg;
 }
 
 const calculateCountdown = (targetDate: string) => {
@@ -30,9 +28,7 @@ const formatTimeValue = (value: number) => value.toString().padStart(2, '0');
 const formatTime = (dateString: string | null) => {
   if (!dateString) return 'N/A';
   return new Date(dateString).toLocaleTimeString('es-AR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
+    hour: '2-digit', minute: '2-digit', hour12: false,
   });
 };
 
@@ -48,7 +44,7 @@ const CountdownUnit: React.FC<{ value: number; label: string }> = ({ value, labe
 );
 
 
-const NextTripCard: React.FC<NextTripCardProps> = ({ flight, flightType }) => {
+const NextTripCard: React.FC<NextTripCardProps> = ({ flight }) => {
   const nextFlightDate = flight.departureDateTime;
   
   const [countdown, setCountdown] = useState(calculateCountdown(nextFlightDate || ''));
@@ -90,7 +86,7 @@ const NextTripCard: React.FC<NextTripCardProps> = ({ flight, flightType }) => {
                 <AirlineLogo airline={flight.airline} size="sm" type="isotipo" />
                 <div>
                     <p className="font-bold text-slate-800 dark:text-slate-200">{flight.flightNumber}</p>
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 capitalize">{flightType === 'ida' ? 'Ida' : 'Vuelta'}</p>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 capitalize">{flight.type === 'ida' ? 'Ida' : 'Vuelta'}</p>
                 </div>
             </div>
             <div className="text-right">

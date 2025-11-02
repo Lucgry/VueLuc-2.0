@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import type { Trip, Flight, BoardingPassData } from '../types';
+// FIX: Updated DisplayTrip to Trip to match the renamed type interface.
+import type { Trip, FlightLeg, BoardingPassData } from '../types';
 import { getBoardingPass } from '../services/db';
 import { AirlineLogo } from './AirlineLogo';
 import BoardingPassViewer from './BoardingPassViewer';
@@ -8,9 +9,9 @@ import { XCircleIcon } from './icons/XCircleIcon';
 import { DocumentPlusIcon } from './icons/DocumentPlusIcon';
 
 interface AirportModeViewProps {
+  // FIX: Updated DisplayTrip to Trip to match the renamed type interface.
   trip: Trip;
-  flight: Flight;
-  flightType: 'ida' | 'vuelta';
+  flight: FlightLeg;
   onClose: () => void;
   userId: string;
 }
@@ -18,22 +19,18 @@ interface AirportModeViewProps {
 const formatDate = (dateString: string | null) => {
   if (!dateString) return 'N/A';
   return new Date(dateString).toLocaleDateString('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
+    weekday: 'long', day: 'numeric', month: 'long',
   });
 };
 
 const formatTime = (dateString: string | null) => {
   if (!dateString) return 'N/A';
   return new Date(dateString).toLocaleTimeString('es-AR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
+    hour: '2-digit', minute: '2-digit', hour12: false,
   });
 };
 
-const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightType, onClose, userId }) => {
+const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, onClose, userId }) => {
     const [boardingPassData, setBoardingPassData] = useState<BoardingPassData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -44,7 +41,7 @@ const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightT
             setIsLoading(true);
             setError(null);
             try {
-                const { file, exists } = await getBoardingPass(userId, trip.id, flightType);
+                const { file, exists } = await getBoardingPass(userId, flight.id);
                 if (exists && file) {
                     const url = URL.createObjectURL(file);
                     setBoardingPassData({ fileURL: url, fileType: file.type });
@@ -61,14 +58,12 @@ const AirportModeView: React.FC<AirportModeViewProps> = ({ trip, flight, flightT
 
         fetchBoardingPass();
         
-        // Cleanup blob URL on component unmount
         return () => {
             if (boardingPassData?.fileURL.startsWith('blob:')) {
                 URL.revokeObjectURL(boardingPassData.fileURL);
             }
         };
-
-    }, [userId, trip.id, flightType]);
+    }, [userId, flight.id, boardingPassData?.fileURL]);
 
     return (
         <>

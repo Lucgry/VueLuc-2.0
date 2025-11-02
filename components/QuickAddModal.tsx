@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import type { Trip, Flight } from '../types';
+import type { Flight } from '../types';
 import { PencilSquareIcon } from './icons/PencilSquareIcon';
 import { Spinner } from './Spinner';
 
 interface QuickAddModalProps {
   onClose: () => void;
-  onAddTrip: (newTrip: Omit<Trip, 'id' | 'createdAt'>) => Promise<void>;
+  onAddFlights: (flights: Flight[], purchaseDate: string) => Promise<void>;
 }
 
 const getNextDayOfWeek = (dayOfWeek: number): Date => { // 0=Sun, 1=Mon, ..., 6=Sat
@@ -66,17 +66,15 @@ const FlightFieldSet: React.FC<{
 }> = ({ title, data, setData }) => {
 
     const handleInputChange = (field: keyof FlightData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const value = e.target.value;
-        setData(prev => ({ ...prev, [field]: value }));
+        setData(prev => ({ ...prev, [field]: e.target.value }));
     };
 
     useEffect(() => {
         const normalizedFlightNum = data.flightNum.trim().toLowerCase();
-        if (normalizedFlightNum.startsWith('ar')) {
-            setData(prev => ({ ...prev, airline: 'Aerolineas Argentinas' }));
-        } else if (normalizedFlightNum.startsWith('wj')) {
-            setData(prev => ({ ...prev, airline: 'JetSmart' }));
-        }
+        setData(prev => ({
+            ...prev,
+            airline: normalizedFlightNum.startsWith('ar') ? 'Aerolineas Argentinas' : normalizedFlightNum.startsWith('wj') ? 'JetSmart' : prev.airline
+        }));
     }, [data.flightNum]);
 
     return (
@@ -102,9 +100,10 @@ const FlightFieldSet: React.FC<{
 };
 
 
-const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => {
+const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddFlights }) => {
     const [idaData, setIdaData] = useState<FlightData>(initialIdaData);
     const [vueltaData, setVueltaData] = useState<FlightData>(initialVueltaData);
+    const [purchaseDate, setPurchaseDate] = useState(formatDateForInput(new Date()));
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
@@ -114,17 +113,13 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
         setIsLoading(true);
 
         const createFlightObject = (data: FlightData): Flight | null => {
+            if (!data.flightNum.trim() && !data.bookingReference.trim()) return null;
             if (!data.flightNum.trim() || !data.depCode.trim() || !data.arrCode.trim() || !data.depDate.trim() || !data.depTime.trim() || !data.arrDate.trim() || !data.arrTime.trim()) {
-                return null;
+                throw new Error('Si inicias un tramo, debes completar todos sus campos de ruta y horario.');
             }
-            const [depHours, depMinutes] = data.depTime.split(':').map(Number);
-            const depDateTime = new Date(`${data.depDate}T00:00:00.000Z`);
-            depDateTime.setUTCHours(depHours, depMinutes, 0, 0);
-
-            const [arrHours, arrMinutes] = data.arrTime.split(':').map(Number);
-            const arrDateTime = new Date(`${data.arrDate}T00:00:00.000Z`);
-            arrDateTime.setUTCHours(arrHours, arrMinutes, 0, 0);
-
+            if (!data.bookingReference.trim()) {
+                throw new Error('El código de reserva es obligatorio para cada tramo que se agrega.');
+            }
             return {
                 flightNumber: data.flightNum.toUpperCase().trim(),
                 airline: data.airline.trim(),
@@ -132,34 +127,27 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
                 departureCity: data.depCity.trim(),
                 arrivalAirportCode: data.arrCode.toUpperCase().trim(),
                 arrivalCity: data.arrCity.trim(),
-                departureDateTime: depDateTime.toISOString(),
-                arrivalDateTime: arrDateTime.toISOString(),
+                departureDateTime: new Date(`${data.depDate}T${data.depTime}`).toISOString(),
+                arrivalDateTime: new Date(`${data.arrDate}T${data.arrTime}`).toISOString(),
                 cost: data.cost ? parseFloat(data.cost) : null,
                 paymentMethod: data.paymentMethod,
-                bookingReference: data.bookingReference.toUpperCase().trim() || null,
+                bookingReference: data.bookingReference.toUpperCase().trim(),
             };
         };
         
         try {
+            const flightsToAdd: Flight[] = [];
             const departureFlight = createFlightObject(idaData);
             const returnFlight = createFlightObject(vueltaData);
             
-            if (!departureFlight && !returnFlight) {
+            if (departureFlight) flightsToAdd.push(departureFlight);
+            if (returnFlight) flightsToAdd.push(returnFlight);
+            
+            if (flightsToAdd.length === 0) {
                 throw new Error('Debes completar los datos de al menos un tramo (ida o vuelta).');
             }
-            if (departureFlight && !departureFlight.bookingReference) {
-                 throw new Error('El código de reserva de Ida es obligatorio si completas ese tramo.');
-            }
-            if (returnFlight && !returnFlight.bookingReference) {
-                 throw new Error('El código de reserva de Vuelta es obligatorio si completas ese tramo.');
-            }
 
-
-            const newTrip: Omit<Trip, 'id' | 'createdAt'> = {
-                departureFlight,
-                returnFlight,
-            };
-            await onAddTrip(newTrip);
+            await onAddFlights(flightsToAdd, new Date(purchaseDate).toISOString());
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Error al crear el viaje.');
         } finally {
@@ -171,7 +159,6 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
         <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex justify-center items-center z-50 p-4" onClick={onClose}>
             <div className="bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out w-full max-w-3xl transform transition-all flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
                 <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-                    {/* --- HEADER --- */}
                     <div className="p-6 md:p-8 flex-shrink-0 border-b border-slate-200 dark:border-slate-700">
                         <div className="flex items-start sm:items-center space-x-4">
                             <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-full shadow-neumo-light-out dark:shadow-neumo-dark-out mt-1 sm:mt-0">
@@ -183,27 +170,23 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
                             </div>
                         </div>
                     </div>
-
-                    {/* --- SCROLLABLE CONTENT --- */}
                     <div className="overflow-y-auto flex-grow min-h-0">
                         <div className="px-6 md:px-8 py-4">
                             <div className="space-y-4">
+                               <div className="p-4 rounded-lg shadow-neumo-light-in dark:shadow-neumo-dark-in">
+                                  <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Fecha de Compra</label>
+                                  <input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} className={inputClasses} />
+                               </div>
                                <FlightFieldSet title="✈️ Ida" data={idaData} setData={setIdaData} />
                                <FlightFieldSet title="✈️ Vuelta" data={vueltaData} setData={setVueltaData} />
                             </div>
                         </div>
                     </div>
-
-                    {/* --- FOOTER --- */}
                     <div className="p-6 md:p-8 flex-shrink-0 border-t border-slate-200 dark:border-slate-700">
                         {error && <p className="text-red-500 text-sm mb-3 text-center sm:text-left">{error}</p>}
                         <div className="flex flex-col sm:flex-row justify-end items-center space-y-2 sm:space-y-0 sm:space-x-4">
-                             <button type="button" onClick={onClose} className="w-full sm:w-auto px-4 py-2 text-slate-800 dark:text-slate-200 rounded-md transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in" disabled={isLoading}>
-                                Cancelar
-                            </button>
-                            <button type="submit" className="w-full sm:w-auto px-6 py-2 bg-gradient-to-br from-indigo-500 to-indigo-600 text-white font-semibold rounded-md disabled:opacity-60 transition-shadow duration-200 flex items-center justify-center shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in" disabled={isLoading}>
-                                {isLoading ? <Spinner /> : 'Guardar Viaje'}
-                            </button>
+                             <button type="button" onClick={onClose} className="w-full sm:w-auto px-4 py-2 text-slate-800 dark:text-slate-200 rounded-md transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in" disabled={isLoading}>Cancelar</button>
+                            <button type="submit" className="w-full sm:w-auto px-6 py-2 bg-gradient-to-br from-indigo-500 to-indigo-600 text-white font-semibold rounded-md disabled:opacity-60 transition-shadow duration-200 flex items-center justify-center shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in" disabled={isLoading}>{isLoading ? <Spinner /> : 'Guardar Viaje'}</button>
                         </div>
                     </div>
                 </form>

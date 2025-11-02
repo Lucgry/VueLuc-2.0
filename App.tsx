@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { Trip, Flight } from './types';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import type { Trip, Flight, FlightLeg } from './types';
 import Header from './components/Header';
 import TripList from './components/TripList';
 import EmailImporter from './components/EmailImporter';
@@ -14,56 +14,36 @@ import InstallBanner from './components/InstallBanner';
 import QuickAddModal from './components/QuickAddModal';
 import { PencilSquareIcon } from './components/icons/PencilSquareIcon';
 import { MailIcon } from './components/icons/MailIcon';
-import { deleteBoardingPassesForTrip, getBoardingPass, saveBoardingPass, deleteBoardingPass } from './services/db';
+import { deleteBoardingPassesForLegs } from './services/db';
 import AirportModeView from './components/AirportModeView';
 import ApiKeySetup from './components/ApiKeySetup';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { db, auth, isFirebaseInitialized, firebaseInitializationError, projectId } from './firebase';
-import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, updateDoc, writeBatch, getDocs, where } from 'firebase/firestore';
 import LoginScreen from './components/LoginScreen';
 import { FullScreenLoader } from './components/Spinner';
 import { BoltIcon } from './components/icons/BoltIcon';
 import { InformationCircleIcon } from './components/icons/InformationCircleIcon';
 import { ClockIcon } from './components/icons/ClockIcon';
 
-// A type guard for BeforeInstallPromptEvent
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: Array<string>;
-  readonly userChoice: Promise<{
-    outcome: 'accepted' | 'dismissed';
-    platform: string;
-  }>;
+  readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string; }>;
   prompt(): Promise<void>;
 }
 
 type View = 'list' | 'calendar' | 'costs';
-type ListFilter = 'future' | 'completed' | 'currentMonth' | 'all';
+type ListFilter = 'future' | 'completed' | 'all';
 
 const filterOptions: { key: ListFilter; label: string }[] = [
   { key: 'future', label: 'Futuros' },
-  { key: 'currentMonth', label: 'Este Mes' },
   { key: 'completed', label: 'Completados' },
   { key: 'all', label: 'Todos' },
 ];
 
-const getTripStartDate = (trip: Trip): Date | null => {
-    const dateStr = trip.departureFlight?.departureDateTime || trip.returnFlight?.departureDateTime;
-    return dateStr ? new Date(dateStr) : null;
+const getFlightLegEndDate = (leg: FlightLeg): Date | null => {
+    return leg.arrivalDateTime ? new Date(leg.arrivalDateTime) : null;
 };
-
-const getTripEndDate = (trip: Trip): Date | null => {
-    const dateStr = trip.returnFlight?.arrivalDateTime || trip.departureFlight?.arrivalDateTime;
-    return dateStr ? new Date(dateStr) : null;
-};
-
-const getFlightFingerprint = (flight: Flight | null): string | null => {
-  if (!flight || !flight.flightNumber || !flight.departureDateTime || !flight.departureAirportCode || !flight.arrivalAirportCode) {
-    return null;
-  }
-  // Un vuelo se identifica de forma única por su número, fecha/hora de salida y ruta.
-  return `${flight.flightNumber.trim().toUpperCase()}-${flight.departureDateTime}-${flight.departureAirportCode}-${flight.arrivalAirportCode}`;
-};
-
 
 const AuthErrorScreen: React.FC<{ error: { links?: { url: string; text: string }[] } }> = ({ error }) => (
     <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">
@@ -72,22 +52,13 @@ const AuthErrorScreen: React.FC<{ error: { links?: { url: string; text: string }
           <InformationCircleIcon className="w-10 h-10" />
         </div>
         <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Error de Autenticación</h1>
-        
         <div className="mt-6 p-4 rounded-lg bg-red-100/50 dark:bg-red-900/20 text-left flex items-start space-x-3 shadow-neumo-light-in dark:shadow-neumo-dark-in">
-            <div className="flex-shrink-0 mt-1">
-                <InformationCircleIcon className="w-6 h-6 text-red-600 dark:text-red-300" />
-            </div>
+            <div className="flex-shrink-0 mt-1"> <InformationCircleIcon className="w-6 h-6 text-red-600 dark:text-red-300" /> </div>
             <div>
                 <h4 className="font-semibold text-red-800 dark:text-red-200">Acción Requerida:</h4>
-                <p className="text-sm text-red-700 dark:text-red-300 mt-1">
-                  ¡Casi listo! Tu inicio de sesión funcionó, pero la app no puede mantener la sesión segura.
-                </p>
-                <p className="text-sm text-red-700 dark:text-red-300 mt-3">
-                  La causa más común es que tu clave de API tiene **Restricciones de sitios web** que bloquean esta aplicación.
-                </p>
-                <p className="text-sm text-red-700 dark:text-red-300 mt-3">
-                    Por favor, sigue estos pasos:
-                </p>
+                <p className="text-sm text-red-700 dark:text-red-300 mt-1"> ¡Casi listo! Tu inicio de sesión funcionó, pero la app no puede mantener la sesión segura. </p>
+                <p className="text-sm text-red-700 dark:text-red-300 mt-3"> La causa más común es que tu clave de API tiene **Restricciones de sitios web** que bloquean esta aplicación. </p>
+                <p className="text-sm text-red-700 dark:text-red-300 mt-3"> Por favor, sigue estos pasos: </p>
                 <ol className="list-decimal list-inside text-sm text-red-700 dark:text-red-300 mt-2 space-y-2">
                     <li>Haz clic en "Revisar Restricciones de API Key".</li>
                     <li>Busca la sección "Restricciones de sitios web".</li>
@@ -98,22 +69,13 @@ const AuthErrorScreen: React.FC<{ error: { links?: { url: string; text: string }
                         </ul>
                     </li>
                 </ol>
-                <p className="text-sm text-red-700 dark:text-red-300 mt-3">
-                    Si el problema persiste, verifica que las APIs de Autenticación y STS estén habilitadas (pasos 2 y 3).
-                </p>
+                <p className="text-sm text-red-700 dark:text-red-300 mt-3"> Si el problema persiste, verifica que las APIs de Autenticación y STS estén habilitadas (pasos 2 y 3). </p>
             </div>
         </div>
-        
         {error.links && (
            <div className="mt-6 flex flex-col space-y-3">
              {error.links.map((link, index) => (
-               <a 
-                    key={index}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex justify-between items-center w-full px-4 py-3 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-600 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm text-left"
-                >
+               <a key={index} href={link.url} target="_blank" rel="noopener noreferrer" className="flex justify-between items-center w-full px-4 py-3 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-600 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm text-left">
                     <span>{link.text.replace('→', '').trim()}</span>
                     <span>&rarr;</span>
                 </a>
@@ -124,7 +86,6 @@ const AuthErrorScreen: React.FC<{ error: { links?: { url: string; text: string }
     </div>
 );
 
-
 const App: React.FC = () => {
   if (!isFirebaseInitialized) {
     return (
@@ -134,29 +95,17 @@ const App: React.FC = () => {
             <ClockIcon className="w-8 h-8 animate-pulse" />
           </div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Finalizando Configuración</h1>
-          <p className="mt-2 text-slate-600 dark:text-slate-400">
-            Se están aplicando los cambios en los servicios de la nube. Esto puede tardar uno o dos minutos. La aplicación se conectará en cuanto esté listo.
-          </p>
+          <p className="mt-2 text-slate-600 dark:text-slate-400"> Se están aplicando los cambios en los servicios de la nube. Esto puede tardar uno o dos minutos. La aplicación se conectará en cuanto esté listo. </p>
           {firebaseInitializationError && (
             <div className="mt-6 p-4 rounded-lg bg-red-100/50 dark:bg-red-900/20 text-left flex items-start space-x-3 shadow-neumo-light-in dark:shadow-neumo-dark-in">
-                <div className="flex-shrink-0 mt-0.5">
-                    <InformationCircleIcon className="w-5 h-5 text-red-600 dark:text-red-300" />
-                </div>
+                <div className="flex-shrink-0 mt-0.5"> <InformationCircleIcon className="w-5 h-5 text-red-600 dark:text-red-300" /> </div>
                 <div>
                     <h4 className="font-semibold text-red-800 dark:text-red-200">Acción Requerida:</h4>
-                    <p className="text-sm text-red-700 dark:text-red-300 mt-1">
-                        {firebaseInitializationError.message}
-                    </p>
+                    <p className="text-sm text-red-700 dark:text-red-300 mt-1"> {firebaseInitializationError.message} </p>
                     {firebaseInitializationError.links && (
                        <div className="mt-4 flex flex-col space-y-2">
                          {firebaseInitializationError.links.map((link, index) => (
-                           <a 
-                                key={index}
-                                href={link.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-block px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm text-center"
-                            >
+                           <a key={index} href={link.url} target="_blank" rel="noopener noreferrer" className="inline-block px-4 py-2 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-semibold rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-shadow duration-200 shadow-neumo-light-out dark:shadow-neumo-dark-out active:shadow-neumo-light-in dark:active:shadow-neumo-dark-in text-sm text-center">
                                 {link.text} &rarr;
                             </a>
                          ))}
@@ -170,12 +119,11 @@ const App: React.FC = () => {
     );
   }
 
-  const [trips, setTrips] = useState<Trip[]>([]);
+  const [flightLegs, setFlightLegs] = useState<FlightLeg[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [authRuntimeError, setAuthRuntimeError] = useState<{ message: string; links?: { url: string; text: string; }[] } | null>(null);
   const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('gemini_api_key'));
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isQuickAddModalOpen, setIsQuickAddModalOpen] = useState(false);
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
@@ -184,20 +132,11 @@ const App: React.FC = () => {
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallBannerVisible, setIsInstallBannerVisible] = useState(false);
   const [isAirportMode, setIsAirportMode] = useState(false);
-  const [groupingState, setGroupingState] = useState<{ active: boolean; sourceTrip: Trip | null }>({ active: false, sourceTrip: null });
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'light' || savedTheme === 'dark') {
-        return savedTheme;
-    }
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        return 'dark';
-    }
-    return 'light';
+    if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme;
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
-  
-  const processingRef = useRef(false);
-  const duplicateCleanupRun = useRef(false);
 
   // Authentication effect
   useEffect(() => {
@@ -205,251 +144,137 @@ const App: React.FC = () => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser && projectId) {
         setUser(currentUser);
-        // Proactively check if token refresh works to catch API errors
         currentUser.getIdToken(true)
-          .then(() => {
-            setAuthRuntimeError(null);
-            setLoadingAuth(false);
-          })
+          .then(() => { setAuthRuntimeError(null); setLoadingAuth(false); })
           .catch(error => {
             const errorMessage = error.message || '';
             const isHttpError = error.code === 'auth/network-request-failed' || errorMessage.includes('403') || errorMessage.includes('securetoken') || errorMessage.includes('API_KEY_HTTP_REFERRER_BLOCKED');
-            
             if (isHttpError) {
                 const links = [
-                    {
-                        url: `https://console.cloud.google.com/apis/credentials?project=${projectId}`,
-                        text: '1. Revisar Restricciones de API Key →'
-                    },
-                    {
-                        url: `https://console.cloud.google.com/apis/library/identitytoolkit.googleapis.com?project=${projectId}`,
-                        text: '2. Habilitar API de Autenticación (Opcional) →'
-                    },
-                    {
-                        url: `https://console.cloud.google.com/apis/library/sts.googleapis.com?project=${projectId}`,
-                        text: '3. Habilitar API de Tokens (Opcional) →'
-                    }
+                    { url: `https://console.cloud.google.com/apis/credentials?project=${projectId}`, text: '1. Revisar Restricciones de API Key →' },
+                    { url: `https://console.cloud.google.com/apis/library/identitytoolkit.googleapis.com?project=${projectId}`, text: '2. Habilitar API de Autenticación (Opcional) →' },
+                    { url: `https://console.cloud.google.com/apis/library/sts.googleapis.com?project=${projectId}`, text: '3. Habilitar API de Tokens (Opcional) →' }
                 ];
                 setAuthRuntimeError({ message: "Auth token refresh failed", links });
-            } else {
-               setAuthRuntimeError({ message: `Ocurrió un error inesperado durante la autenticación: ${errorMessage}`});
-            }
+            } else { setAuthRuntimeError({ message: `Ocurrió un error inesperado durante la autenticación: ${errorMessage}`}); }
             setLoadingAuth(false);
         });
-      } else {
-        setUser(currentUser);
-        setLoadingAuth(false);
-      }
+      } else { setUser(currentUser); setLoadingAuth(false); }
     });
     return () => unsubscribe();
   }, []);
 
-  const mergeTrips = useCallback(async (idaTrip: Trip, vueltaTrip: Trip) => {
-    if (!user || !db) return;
-    try {
-      const updatedData: Partial<Omit<Trip, 'id' | 'createdAt'>> = {
-        departureFlight: idaTrip.departureFlight,
-        returnFlight: vueltaTrip.returnFlight,
-      };
+  const runAutomaticPairing = useCallback(async (currentLegs: FlightLeg[]) => {
+      if (!user || !db || currentLegs.length < 1) return;
 
-      if (idaTrip.purchaseDate && vueltaTrip.purchaseDate) {
-        updatedData.purchaseDate = new Date(idaTrip.purchaseDate) < new Date(vueltaTrip.purchaseDate) ? idaTrip.purchaseDate : vueltaTrip.purchaseDate;
-      } else {
-        updatedData.purchaseDate = idaTrip.purchaseDate || vueltaTrip.purchaseDate;
-      }
+      const legsToProcess = [...currentLegs].sort((a, b) => 
+          new Date(a.departureDateTime!).getTime() - new Date(b.departureDateTime!).getTime()
+      );
 
-      const idaTripRef = doc(db, 'users', user.uid, 'trips', idaTrip.id);
-      const vueltaTripRef = doc(db, 'users', user.uid, 'trips', vueltaTrip.id);
+      const batch = writeBatch(db);
+      const pairedLegIds = new Set<string>();
+      let hasChanges = false;
 
-      await updateDoc(idaTripRef, updatedData);
+      for (let i = 0; i < legsToProcess.length; i++) {
+          const currentLeg = legsToProcess[i];
 
-      const vueltaPass = await getBoardingPass(user.uid, vueltaTrip.id, 'vuelta');
-      if (vueltaPass.exists && vueltaPass.file) {
-        await saveBoardingPass(user.uid, idaTrip.id, 'vuelta', vueltaPass.file);
-      }
-      
-      await deleteDoc(vueltaTripRef);
+          if (pairedLegIds.has(currentLeg.id) || currentLeg.type === 'vuelta') {
+              continue; // Ya está emparejado o es una vuelta (solo iniciamos desde idas)
+          }
 
-    } catch (error) {
-      console.error("Error al fusionar viajes:", error);
-      throw new Error("Ocurrió un error al fusionar los viajes.");
-    }
-  }, [user]);
+          // Es una IDA, buscar su posible pareja
+          let potentialPartner: FlightLeg | null = null;
+          for (let j = i + 1; j < legsToProcess.length; j++) {
+              const nextLeg = legsToProcess[j];
+              if (!pairedLegIds.has(nextLeg.id)) {
+                  potentialPartner = nextLeg;
+                  break; // Encontramos el siguiente tramo suelto más próximo
+              }
+          }
 
-  const runAutomaticGrouping = useCallback(async (currentTrips: Trip[]) => {
-      if (!user || !db || processingRef.current) return;
+          if (potentialPartner && potentialPartner.type === 'vuelta') {
+              // Emparejamiento exitoso
+              const tripId = currentLeg.id;
+              
+              if (currentLeg.status !== 'paired' || currentLeg.tripId !== tripId) {
+                  const currentLegRef = doc(db, 'users', user.uid, 'flightLegs', currentLeg.id);
+                  batch.update(currentLegRef, { status: 'paired', tripId });
+                  hasChanges = true;
+              }
+              if (potentialPartner.status !== 'paired' || potentialPartner.tripId !== tripId) {
+                  const partnerLegRef = doc(db, 'users', user.uid, 'flightLegs', potentialPartner.id);
+                  batch.update(partnerLegRef, { status: 'paired', tripId });
+                  hasChanges = true;
+              }
 
-      const singleLegs = currentTrips.filter(t => (!!t.departureFlight) !== (!!t.returnFlight));
-      if (singleLegs.length < 2) return;
-
-      processingRef.current = true;
-
-      const sortedLegs = singleLegs.sort((a, b) => {
-          const dateA = getTripStartDate(a);
-          const dateB = getTripStartDate(b);
-          if (!dateA) return 1;
-          if (!dateB) return -1;
-          return dateA.getTime() - dateB.getTime();
-      });
-
-      const unpairedLegs = sortedLegs.map(trip => ({ trip, paired: false }));
-
-      for (let i = 0; i < unpairedLegs.length; i++) {
-          if (unpairedLegs[i].paired) continue;
-
-          const currentLeg = unpairedLegs[i].trip;
-          const isIda = !!currentLeg.departureFlight;
-
-          if (isIda) {
-              const nextLegIndex = i + 1;
-              if (nextLegIndex < unpairedLegs.length && !unpairedLegs[nextLegIndex].paired) {
-                  const nextLeg = unpairedLegs[nextLegIndex].trip;
-                  const isVuelta = !!nextLeg.returnFlight;
-                  if (isVuelta) {
-                      console.log(`Emparejando IDA ${currentLeg.id} con VUELTA ${nextLeg.id}`);
-                      await mergeTrips(currentLeg, nextLeg);
-                      unpairedLegs[i].paired = true;
-                      unpairedLegs[nextLegIndex].paired = true;
-                  }
+              pairedLegIds.add(currentLeg.id);
+              pairedLegIds.add(potentialPartner.id);
+          } else {
+              // La IDA queda suelta (el siguiente es otra IDA o no hay más)
+              if (currentLeg.status !== 'loose' || currentLeg.tripId !== null) {
+                   const legRef = doc(db, 'users', user.uid, 'flightLegs', currentLeg.id);
+                   batch.update(legRef, { status: 'loose', tripId: null });
+                   hasChanges = true;
               }
           }
       }
       
-      processingRef.current = false;
-  }, [user, db, mergeTrips]);
+      // Asegurarse de que las vueltas sin pareja estén marcadas como sueltas
+      for(const leg of legsToProcess){
+          if(leg.type === 'vuelta' && !pairedLegIds.has(leg.id)){
+              if (leg.status !== 'loose' || leg.tripId !== null) {
+                   const legRef = doc(db, 'users', user.uid, 'flightLegs', leg.id);
+                   batch.update(legRef, { status: 'loose', tripId: null });
+                   hasChanges = true;
+              }
+          }
+      }
 
+      if (hasChanges) {
+          await batch.commit();
+      }
+  }, [user, db]);
 
   // Firestore data loading effect
   useEffect(() => {
     if (!user || !db || authRuntimeError) {
-      setTrips([]);
+      setFlightLegs([]);
       return;
     }
 
-    const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
-    const q = query(tripsCollectionRef, orderBy('createdAt', 'desc'));
+    const legsCollectionRef = collection(db, 'users', user.uid, 'flightLegs');
+    const q = query(legsCollectionRef, orderBy('departureDateTime', 'asc'));
 
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const tripsFromFirestore: Trip[] = [];
+      const legsFromFirestore: FlightLeg[] = [];
       querySnapshot.forEach((doc) => {
-        tripsFromFirestore.push({ id: doc.id, ...doc.data() } as Trip);
+        legsFromFirestore.push({ id: doc.id, ...doc.data() } as FlightLeg);
       });
-      setTrips(tripsFromFirestore);
-      runAutomaticGrouping(tripsFromFirestore);
+      setFlightLegs(legsFromFirestore);
+      runAutomaticPairing(legsFromFirestore);
     }, (error) => {
-        console.error("Error fetching trips from Firestore:", error);
+        console.error("Error fetching flight legs from Firestore:", error);
     });
 
     return () => unsubscribe();
-  }, [user, authRuntimeError, runAutomaticGrouping]);
-
-  // One-time cleanup for duplicate flights
-  useEffect(() => {
-    if (!user || !db || trips.length === 0 || duplicateCleanupRun.current) {
-        return;
-    }
-
-    const runDuplicateCleanup = async () => {
-        console.log("Iniciando limpieza de vuelos duplicados...");
-        duplicateCleanupRun.current = true; // Mark as run to prevent re-execution
-
-        const seenFingerprints = new Set<string>();
-        const promises: Promise<void>[] = [];
-        let duplicatesFound = 0;
-
-        // Sort trips by creation date to keep the oldest one in case of duplicates
-        const sortedForCleanup = [...trips].sort((a, b) => 
-            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
-        );
-
-        for (const trip of sortedForCleanup) {
-            const tripRef = doc(db, 'users', user.uid, 'trips', trip.id);
-            let isModified = false;
-            const updates: { departureFlight: Flight | null; returnFlight: Flight | null } = {
-                departureFlight: trip.departureFlight,
-                returnFlight: trip.returnFlight,
-            };
-
-            // Check departure flight
-            if (updates.departureFlight) {
-                const fingerprint = getFlightFingerprint(updates.departureFlight);
-                if (fingerprint && seenFingerprints.has(fingerprint)) {
-                    updates.departureFlight = null;
-                    isModified = true;
-                    duplicatesFound++;
-                    console.log(`Duplicado encontrado (IDA): Vuelo ${fingerprint} en viaje ${trip.id}`);
-                } else if (fingerprint) {
-                    seenFingerprints.add(fingerprint);
-                }
-            }
-
-            // Check return flight
-            if (updates.returnFlight) {
-                const fingerprint = getFlightFingerprint(updates.returnFlight);
-                if (fingerprint && seenFingerprints.has(fingerprint)) {
-                    updates.returnFlight = null;
-                    isModified = true;
-                    duplicatesFound++;
-                    console.log(`Duplicado encontrado (VUELTA): Vuelo ${fingerprint} en viaje ${trip.id}`);
-                } else if (fingerprint) {
-                    seenFingerprints.add(fingerprint);
-                }
-            }
-
-            // Decide action: delete, update, or do nothing
-            if (isModified) {
-                if (!updates.departureFlight && !updates.returnFlight) {
-                    // Both flights were duplicates, delete the whole trip doc
-                    promises.push(deleteDoc(tripRef));
-                    console.log(`Viaje ${trip.id} marcado para eliminación completa.`);
-                } else {
-                    // One flight was a duplicate, update the trip doc
-                    promises.push(updateDoc(tripRef, updates));
-                    console.log(`Viaje ${trip.id} marcado para actualización.`);
-                }
-            }
-        }
-        
-        if (promises.length > 0) {
-            await Promise.all(promises);
-            console.log(`Limpieza completada. Se procesaron ${promises.length} operaciones de escritura/eliminación.`);
-            alert(`Se han eliminado ${duplicatesFound} vuelos duplicados que se encontraron en tus registros.`);
-        } else {
-             console.log("No se encontraron duplicados durante la limpieza.");
-        }
-    };
-    
-    runDuplicateCleanup();
-
-  }, [trips, user, db]);
-
+  }, [user, authRuntimeError, runAutomaticPairing]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault(); 
       setInstallPromptEvent(event as BeforeInstallPromptEvent);
-      
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-      const bannerDismissed = sessionStorage.getItem('vueluc.bannerDismissed');
-
-      if (!isStandalone && !bannerDismissed) {
+      if (!window.matchMedia('(display-mode: standalone)').matches && !sessionStorage.getItem('vueluc.bannerDismissed')) {
         setIsInstallBannerVisible(true);
       }
     };
-
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
 
   useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('theme', theme);
   }, [theme]);
   
@@ -464,60 +289,70 @@ const App: React.FC = () => {
     alert('La API Key no es válida o ha expirado. Por favor, ingresa una nueva.');
   };
 
-  const handleToggleTheme = () => {
-    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
-  };
+  const handleToggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  const handleToggleAirportMode = () => setIsAirportMode(prev => !prev);
 
-  const handleToggleAirportMode = () => {
-      setIsAirportMode(prev => !prev);
-  }
-
-  const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
+  const handleAddFlights = async (flights: Flight[], purchaseDate: string) => {
     if (!user || !db) throw new Error("Usuario no autenticado.");
 
-    // --- Verificación de duplicados ---
-    const depFingerprint = getFlightFingerprint(newTripData.departureFlight);
-    const retFingerprint = getFlightFingerprint(newTripData.returnFlight);
+    const legsCollectionRef = collection(db, 'users', user.uid, 'flightLegs');
+    
+    for (const flight of flights) {
+        if (!flight.bookingReference) {
+            alert(`Se omitió un vuelo porque no tiene código de reserva.`);
+            continue;
+        }
 
-    const existingFingerprints = new Set<string>();
-    trips.forEach(trip => {
-        const existingDep = getFlightFingerprint(trip.departureFlight);
-        const existingRet = getFlightFingerprint(trip.returnFlight);
-        if (existingDep) existingFingerprints.add(existingDep);
-        if (existingRet) existingFingerprints.add(existingRet);
-    });
+        const q = query(legsCollectionRef, where("bookingReference", "==", flight.bookingReference));
+        const querySnapshot = await getDocs(q);
+        
+        const existingLeg = querySnapshot.docs[0];
 
-    if (depFingerprint && existingFingerprints.has(depFingerprint)) {
-        alert(`El vuelo de ida (${newTripData.departureFlight?.flightNumber}) ya existe. No se agregará.`);
-        setIsModalOpen(false);
-        setIsQuickAddModalOpen(false);
-        return;
-    }
-    if (retFingerprint && existingFingerprints.has(retFingerprint)) {
-        alert(`El vuelo de vuelta (${newTripData.returnFlight?.flightNumber}) ya existe. No se agregará.`);
-        setIsModalOpen(false);
-        setIsQuickAddModalOpen(false);
-        return;
-    }
-    // --- Fin de la verificación ---
+        if (existingLeg) {
+            const existingData = existingLeg.data() as FlightLeg;
+            if (existingData.departureDateTime === flight.departureDateTime) {
+                alert(`Este tramo ya fue registrado (PNR: ${flight.bookingReference}).`);
+                continue; // Bloquear ingreso, duplicado exacto
+            } else {
+                // Mismo PNR, diferente fecha/hora -> Reemplazar
+                await deleteDoc(doc(db, 'users', user.uid, 'flightLegs', existingLeg.id));
+                alert(`Se ha reemplazado el tramo anterior con código de reserva ${flight.bookingReference} por un nuevo tramo con fecha/hora actualizada.`);
+            }
+        }
+        
+        const depCode = flight.departureAirportCode?.toUpperCase().trim();
+        const type = (depCode === 'SLA') ? 'ida' : 'vuelta';
 
-    try {
-        const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
-        await addDoc(tripsCollectionRef, { ...newTripData, createdAt: new Date().toISOString() });
-        setIsModalOpen(false);
-        setIsQuickAddModalOpen(false);
-    } catch (error) {
-        console.error("Error adding trip to Firestore:", error);
-        throw new Error('No se pudo guardar el viaje en la base de datos.');
+        const newLegData = {
+            ...flight,
+            purchaseDate,
+            createdAt: new Date().toISOString(),
+            status: 'loose',
+            tripId: null,
+            type: type,
+        };
+        await addDoc(legsCollectionRef, newLegData);
     }
+    setIsModalOpen(false);
+    setIsQuickAddModalOpen(false);
   };
 
-  const handleDeleteTrip = async (tripId: string) => {
+  const handleDeleteTrip = async (trip: Trip) => {
     if (!user || !db) return;
     try {
-      await deleteBoardingPassesForTrip(user.uid, tripId);
-      const tripDocRef = doc(db, 'users', user.uid, 'trips', tripId);
-      await deleteDoc(tripDocRef);
+        const legIdsToDelete: string[] = [];
+        if (trip.departureFlight) legIdsToDelete.push(trip.departureFlight.id);
+        if (trip.returnFlight) legIdsToDelete.push(trip.returnFlight.id);
+
+        await deleteBoardingPassesForLegs(user.uid, legIdsToDelete);
+
+        const batch = writeBatch(db);
+        legIdsToDelete.forEach(id => {
+            const legDocRef = doc(db, 'users', user.uid, 'flightLegs', id);
+            batch.delete(legDocRef);
+        });
+        await batch.commit();
+
     } catch (error) {
       console.error("Error deleting trip:", error);
       alert('No se pudo eliminar el viaje. Por favor, intenta de nuevo.');
@@ -526,12 +361,7 @@ const App: React.FC = () => {
 
   const handleInstall = () => {
     installPromptEvent?.prompt();
-    installPromptEvent?.userChoice.then(choiceResult => {
-      if (choiceResult.outcome === 'accepted') {
-        console.log('User accepted the install prompt');
-      } else {
-        console.log('User dismissed the install prompt');
-      }
+    installPromptEvent?.userChoice.then(choice => {
       setIsInstallBannerVisible(false);
     });
   };
@@ -541,159 +371,103 @@ const App: React.FC = () => {
       setIsInstallBannerVisible(false);
   };
     
-  // --- Manual Grouping Handlers ---
-  const handleStartGrouping = (trip: Trip) => {
-    setGroupingState({ active: true, sourceTrip: trip });
-  };
+  const displayTrips = useMemo(() => {
+      const pairedTrips = new Map<string, { ida: FlightLeg | null, vuelta: FlightLeg | null }>();
+      const looseLegs: FlightLeg[] = [];
 
-  const handleCancelGrouping = () => {
-    setGroupingState({ active: false, sourceTrip: null });
-  };
-
-  const handleConfirmGrouping = async (targetTrip: Trip) => {
-      const sourceTrip = groupingState.sourceTrip;
-      if (!sourceTrip || !targetTrip || sourceTrip.id === targetTrip.id) {
-          handleCancelGrouping();
-          return;
-      }
-
-      const idaTrip = sourceTrip.departureFlight ? sourceTrip : targetTrip;
-      const vueltaTrip = sourceTrip.returnFlight ? sourceTrip : targetTrip;
-
-      if (!idaTrip.departureFlight || !vueltaTrip.returnFlight || idaTrip.returnFlight || vueltaTrip.departureFlight) {
-          alert("Selección inválida. Debes seleccionar un viaje de solo ida y uno de solo vuelta para agrupar.");
-          handleCancelGrouping();
-          return;
-      }
-      
-      const confirmed = window.confirm("¿Estás seguro de que quieres unir estos dos tramos en un solo viaje de ida y vuelta?");
-      if (!confirmed) {
-          handleCancelGrouping();
-          return;
-      }
-
-      try {
-          await mergeTrips(idaTrip, vueltaTrip);
-      } catch (error) {
-          console.error("Error al agrupar viajes manualmente:", error);
-          alert("Ocurrió un error al agrupar los viajes.");
-      } finally {
-          handleCancelGrouping();
-      }
-  };
-
-
-  const sortedTrips = useMemo(() => {
-      return [...trips].sort((a, b) => {
-          const dateA = getTripStartDate(a);
-          const dateB = getTripStartDate(b);
-          if (!dateA) return 1;
-          if (!dateB) return -1;
-          return dateB.getTime() - dateA.getTime();
+      flightLegs.forEach(leg => {
+          if (leg.status === 'paired' && leg.tripId) {
+              if (!pairedTrips.has(leg.tripId)) {
+                  pairedTrips.set(leg.tripId, { ida: null, vuelta: null });
+              }
+              const tripPair = pairedTrips.get(leg.tripId)!;
+              if (leg.type === 'ida') tripPair.ida = leg;
+              else tripPair.vuelta = leg;
+          } else {
+              looseLegs.push(leg);
+          }
       });
-  }, [trips]);
+      
+      const combinedList: Trip[] = [];
+
+      // Convertir Map a DisplayTrips
+      pairedTrips.forEach((pair, tripId) => {
+          combinedList.push({
+              id: tripId,
+              departureFlight: pair.ida,
+              returnFlight: pair.vuelta,
+              isPaired: true,
+          });
+      });
+
+      // Agregar tramos sueltos
+      looseLegs.forEach(leg => {
+          combinedList.push({
+              id: leg.id,
+              departureFlight: leg.type === 'ida' ? leg : null,
+              returnFlight: leg.type === 'vuelta' ? leg : null,
+              isPaired: false,
+          });
+      });
+      
+       return combinedList.sort((a, b) => {
+            const dateA = a.departureFlight?.departureDateTime || a.returnFlight?.departureDateTime;
+            const dateB = b.departureFlight?.departureDateTime || b.returnFlight?.departureDateTime;
+            if (!dateA) return 1;
+            if (!dateB) return -1;
+            return new Date(dateB).getTime() - new Date(dateA).getTime();
+       });
+  }, [flightLegs]);
   
   const filteredTrips = useMemo(() => {
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-
     switch (listFilter) {
       case 'future':
-        return sortedTrips.filter(trip => {
-          const tripEndDate = getTripEndDate(trip);
-          return tripEndDate ? tripEndDate >= now : true;
+        return displayTrips.filter(trip => {
+          const endDate = getFlightLegEndDate(trip.returnFlight || trip.departureFlight!);
+          return endDate ? endDate >= now : true;
         });
       case 'completed':
-        return sortedTrips.filter(trip => {
-          const tripEndDate = getTripEndDate(trip);
-          return tripEndDate ? tripEndDate < now : false;
-        });
-      case 'currentMonth':
-         return sortedTrips.filter(trip => {
-            const tripStartDate = getTripStartDate(trip);
-            return tripStartDate && tripStartDate >= startOfMonth && tripStartDate <= endOfMonth;
+        return displayTrips.filter(trip => {
+          const endDate = getFlightLegEndDate(trip.returnFlight || trip.departureFlight!);
+          return endDate ? endDate < now : false;
         });
       case 'all':
       default:
-        return sortedTrips;
+        return displayTrips;
     }
-  }, [sortedTrips, listFilter]);
+  }, [displayTrips, listFilter]);
   
   const nextTripInfo = useMemo(() => {
     const now = new Date();
-    const futureTrips = sortedTrips
-      .map(trip => {
-        const idaDate = trip.departureFlight?.departureDateTime ? new Date(trip.departureFlight.departureDateTime) : null;
-        const vueltaDate = trip.returnFlight?.departureDateTime ? new Date(trip.returnFlight.departureDateTime) : null;
-        
-        return {
-          trip,
-          idaDate,
-          vueltaDate,
-          idaFlight: trip.departureFlight,
-          vueltaFlight: trip.returnFlight
-        };
-      })
-      .filter(t => (t.idaDate && t.idaDate > now) || (t.vueltaDate && t.vueltaDate > now));
+    const futureLegs = flightLegs.filter(leg => leg.departureDateTime && new Date(leg.departureDateTime) > now);
 
-    if (futureTrips.length === 0) {
-      return null;
-    }
+    if (futureLegs.length === 0) return null;
     
-    let nextFlight: Flight | null = null;
-    let nextFlightType: 'ida' | 'vuelta' | null = null;
-    let nextTrip: Trip | null = null;
-    let nextFlightDate = new Date('2999-12-31');
+    // Ya están ordenados por fecha de salida
+    const nextLeg = futureLegs[0];
 
-    futureTrips.forEach(t => {
-      if (t.idaDate && t.idaDate > now && t.idaDate < nextFlightDate) {
-        nextFlightDate = t.idaDate;
-        nextFlight = t.idaFlight;
-        nextFlightType = 'ida';
-        nextTrip = t.trip;
-      }
-      if (t.vueltaDate && t.vueltaDate > now && t.vueltaDate < nextFlightDate) {
-        nextFlightDate = t.vueltaDate;
-        nextFlight = t.vueltaFlight;
-        nextFlightType = 'vuelta';
-        nextTrip = t.trip;
-      }
-    });
+    const displayTripForNextLeg = displayTrips.find(dt => dt.id === (nextLeg.tripId || nextLeg.id));
 
-    if (nextFlight && nextTrip && nextFlightType) {
+    if (nextLeg && displayTripForNextLeg) {
         return {
-            trip: nextTrip,
-            flight: nextFlight,
-            flightType: nextFlightType
+            trip: displayTripForNextLeg,
+            flight: nextLeg,
         };
     }
-
     return null;
-  }, [sortedTrips]);
+  }, [flightLegs, displayTrips]);
   
-    if (loadingAuth) {
-        return <FullScreenLoader />;
-    }
-
-    if (authRuntimeError) {
-        return <AuthErrorScreen error={authRuntimeError} />;
-    }
-
-    if (!user) {
-        return <LoginScreen />;
-    }
-    
-    if (!apiKey) {
-      return <ApiKeySetup onKeySave={handleKeySave} />;
-    }
+    if (loadingAuth) return <FullScreenLoader />;
+    if (authRuntimeError) return <AuthErrorScreen error={authRuntimeError} />;
+    if (!user) return <LoginScreen />;
+    if (!apiKey) return <ApiKeySetup onKeySave={handleKeySave} />;
     
     if (isAirportMode && nextTripInfo && nextTripInfo.flight) {
         return (
             <AirportModeView 
                 trip={nextTripInfo.trip}
                 flight={nextTripInfo.flight}
-                flightType={nextTripInfo.flightType}
                 onClose={handleToggleAirportMode}
                 userId={user.uid}
             />
@@ -709,31 +483,12 @@ const App: React.FC = () => {
                 onToggleAirportMode={handleToggleAirportMode}
             />
             <main className="pb-28">
-                {groupingState.active && (
-                    <div className="sticky top-2 z-30 mb-4 -mt-2">
-                        <div className="max-w-4xl mx-auto bg-indigo-600/95 backdrop-blur-md text-white p-3 rounded-xl shadow-lg flex justify-between items-center">
-                            <div>
-                                <h3 className="font-bold">Modo Agrupación</h3>
-                                <p className="text-sm">Selecciona un viaje compatible para unirlo.</p>
-                            </div>
-                            <button 
-                                onClick={handleCancelGrouping}
-                                className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-md font-semibold text-sm transition"
-                            >
-                                Cancelar
-                            </button>
-                        </div>
-                    </div>
-                )}
                 {isInstallBannerVisible && (
-                <InstallBanner 
-                    onInstall={handleInstall} 
-                    onDismiss={handleDismissInstallBanner}
-                />
+                <InstallBanner onInstall={handleInstall} onDismiss={handleDismissInstallBanner}/>
                 )}
                 
                 {nextTripInfo && nextTripInfo.flight && (
-                    <NextTripCard flight={nextTripInfo.flight} flightType={nextTripInfo.flightType} />
+                    <NextTripCard flight={nextTripInfo.flight} />
                 )}
 
                 <div className="mb-4">
@@ -773,12 +528,12 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripInfo?.trip.id ?? null} userId={user.uid} groupingState={groupingState} onStartGrouping={handleStartGrouping} onConfirmGrouping={handleConfirmGrouping} />}
-                {view === 'calendar' && <CalendarView trips={trips} />}
-                {view === 'costs' && <CostSummary trips={trips} />}
+                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripInfo?.trip.id ?? null} userId={user.uid} />}
+                {view === 'calendar' && <CalendarView flightLegs={flightLegs} />}
+                {view === 'costs' && <CostSummary flightLegs={flightLegs} />}
 
-                {isModalOpen && <EmailImporter onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} apiKey={apiKey} onInvalidApiKey={handleInvalidApiKey} />}
-                {isQuickAddModalOpen && <QuickAddModal onClose={() => setIsQuickAddModalOpen(false)} onAddTrip={handleAddTrip} />}
+                {isModalOpen && <EmailImporter onClose={() => setIsModalOpen(false)} onAddFlights={handleAddFlights} apiKey={apiKey} onInvalidApiKey={handleInvalidApiKey} />}
+                {isQuickAddModalOpen && <QuickAddModal onClose={() => setIsQuickAddModalOpen(false)} onAddFlights={handleAddFlights} />}
 
                 <div className="fixed bottom-6 right-6 z-40">
                     <div className="relative flex flex-col items-center">
@@ -786,44 +541,32 @@ const App: React.FC = () => {
                             <div className="flex flex-col items-center space-y-3 mb-3">
                                 <div className="group relative">
                                     <button
-                                        onClick={() => {
-                                            setIsQuickAddModalOpen(true);
-                                            setIsFabMenuOpen(false);
-                                        }}
+                                        onClick={() => { setIsQuickAddModalOpen(true); setIsFabMenuOpen(false); }}
                                         className={`w-14 h-14 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 ease-in-out hover:scale-110 ${isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
                                         style={{ transitionDelay: isFabMenuOpen ? '150ms' : '0ms' }}
                                         aria-label="Agregar viaje manualmente"
                                     >
                                         <PencilSquareIcon className="h-7 w-7 text-sky-600 dark:text-sky-400" />
                                     </button>
-                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                        Manual
-                                    </span>
+                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none"> Manual </span>
                                 </div>
-                            
                                 <div className="group relative">
                                     <button
-                                        onClick={() => {
-                                            setIsModalOpen(true);
-                                            setIsFabMenuOpen(false);
-                                        }}
+                                        onClick={() => { setIsModalOpen(true); setIsFabMenuOpen(false); }}
                                         className={`w-14 h-14 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 ease-in-out hover:scale-110 ${isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
                                          style={{ transitionDelay: isFabMenuOpen ? '100ms' : '50ms' }}
                                         aria-label="Agregar viaje con IA"
                                     >
                                         <MailIcon className="h-7 w-7 text-indigo-600 dark:text-indigo-400" />
                                     </button>
-                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                        Con IA
-                                    </span>
+                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none"> Con IA </span>
                                 </div>
                             </div>
                         )}
                         <button
                             onClick={() => setIsFabMenuOpen(!isFabMenuOpen)}
                             className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-110 focus:outline-none focus:ring-4 focus:ring-indigo-500/50"
-                            aria-haspopup="true"
-                            aria-expanded={isFabMenuOpen}
+                            aria-haspopup="true" aria-expanded={isFabMenuOpen}
                         >
                             <PlusCircleIcon className={`h-9 w-9 transition-transform duration-300 ${isFabMenuOpen ? 'rotate-45' : ''}`} />
                         </button>
