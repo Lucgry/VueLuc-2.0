@@ -317,7 +317,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
+const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
     if (!user || !db) throw new Error("Usuario no autenticado.");
 
     const isSingleIda = newTripData.departureFlight && !newTripData.returnFlight;
@@ -325,60 +325,61 @@ const App: React.FC = () => {
     const MAX_DAYS_BETWEEN_FLIGHTS = 10;
     const MAX_TIME_MS = MAX_DAYS_BETWEEN_FLIGHTS * 24 * 60 * 60 * 1000;
 
+    // Lógica para agregar un vuelo de IDA y buscar una VUELTA existente
     if (isSingleIda) {
         const ida = newTripData.departureFlight!;
         const idaArrivalTime = new Date(ida.arrivalDateTime!).getTime();
         const potentialMatches = trips.filter(t => t.returnFlight && !t.departureFlight);
+        
+        let bestMatch: Trip | null = null;
+        let smallestTimeDiff = MAX_TIME_MS;
 
-        if (potentialMatches.length > 0) {
-            potentialMatches.sort((a, b) => 
-                new Date(a.returnFlight!.departureDateTime!).getTime() - 
-                new Date(b.returnFlight!.departureDateTime!).getTime()
-            );
-            
-            const bestMatch = potentialMatches.find(t => {
-                const vueltaDepartureTime = new Date(t.returnFlight!.departureDateTime!).getTime();
-                const timeDiff = vueltaDepartureTime - idaArrivalTime;
-                return timeDiff > 0 && timeDiff < MAX_TIME_MS;
-            });
+        for (const match of potentialMatches) {
+            const vueltaDepartureTime = new Date(match.returnFlight!.departureDateTime!).getTime();
+            const timeDiff = vueltaDepartureTime - idaArrivalTime;
 
-            if (bestMatch) {
-                await handleUpdateTrip(bestMatch.id, { departureFlight: ida });
-                setIsModalOpen(false);
-                setIsQuickAddModalOpen(false);
-                return;
+            if (timeDiff > 0 && timeDiff < smallestTimeDiff) {
+                smallestTimeDiff = timeDiff;
+                bestMatch = match;
             }
+        }
+        
+        if (bestMatch) {
+            await handleUpdateTrip(bestMatch.id, { departureFlight: ida });
+            setIsModalOpen(false);
+            setIsQuickAddModalOpen(false);
+            return;
         }
     }
     
+    // Lógica para agregar un vuelo de VUELTA y buscar una IDA existente
     if (isSingleVuelta) {
         const vuelta = newTripData.returnFlight!;
         const vueltaDepartureTime = new Date(vuelta.departureDateTime!).getTime();
         const potentialMatches = trips.filter(t => t.departureFlight && !t.returnFlight);
         
-        if (potentialMatches.length > 0) {
-            const pastIdaFlights = potentialMatches.filter(t => {
-                const idaDepartureTime = new Date(t.departureFlight!.departureDateTime!).getTime();
-                const timeDiff = vueltaDepartureTime - idaDepartureTime;
-                return timeDiff > 0 && timeDiff < MAX_TIME_MS;
-            });
+        let bestMatch: Trip | null = null;
+        let smallestTimeDiff = MAX_TIME_MS;
 
-            if (pastIdaFlights.length > 0) {
-                pastIdaFlights.sort((a, b) => 
-                    new Date(b.departureFlight!.departureDateTime!).getTime() - 
-                    new Date(a.departureFlight!.departureDateTime!).getTime()
-                );
-                
-                const bestMatch = pastIdaFlights[0];
-                
-                await handleUpdateTrip(bestMatch.id, { returnFlight: vuelta });
-                setIsModalOpen(false);
-                setIsQuickAddModalOpen(false);
-                return;
+        for (const match of potentialMatches) {
+            const idaArrivalTime = new Date(match.departureFlight!.arrivalDateTime!).getTime();
+            const timeDiff = vueltaDepartureTime - idaArrivalTime;
+
+            if (timeDiff > 0 && timeDiff < smallestTimeDiff) {
+                smallestTimeDiff = timeDiff;
+                bestMatch = match;
             }
+        }
+
+        if (bestMatch) {
+            await handleUpdateTrip(bestMatch.id, { returnFlight: vuelta });
+            setIsModalOpen(false);
+            setIsQuickAddModalOpen(false);
+            return;
         }
     }
 
+    // Si no se encontró ninguna coincidencia, crear un nuevo viaje
     try {
       const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
       await addDoc(tripsCollectionRef, {
