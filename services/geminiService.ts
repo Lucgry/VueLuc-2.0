@@ -96,46 +96,39 @@ export const parseFlightEmail = async (apiKey: string, emailText: string, pdfBas
 
     const aiResponse = JSON.parse(parsedText) as GeminiResponse;
     
-    const finalTrip: Omit<Trip, 'id' | 'createdAt'> = {
+    const initialTrip: Omit<Trip, 'id' | 'createdAt'> = {
       departureFlight: null,
       returnFlight: null,
       purchaseDate: aiResponse.purchaseDate,
     };
 
     if (aiResponse.flights && aiResponse.flights.length > 0) {
-        // REGLA DE ORO: Identificar explícitamente el vuelo de ida y el de vuelta por aeropuerto.
-        const departureFlight = aiResponse.flights.find(f => 
-            f.departureAirportCode?.toUpperCase().trim() === 'SLA'
-        );
-        const returnFlight = aiResponse.flights.find(f => 
-            f.departureAirportCode?.toUpperCase().trim() === 'AEP' || 
-            f.departureAirportCode?.toUpperCase().trim() === 'EZE'
-        );
-        
-        // Asignar los vuelos encontrados. Si uno no está en el email, su valor será null.
-        // Esto es correcto para la lógica de agrupación posterior.
-        finalTrip.departureFlight = departureFlight || null;
-        finalTrip.returnFlight = returnFlight || null;
+        // LÓGICA DE ASIGNACIÓN ROBUSTA:
+        // Se utiliza reduce para iterar sobre los vuelos y asignarlos correctamente.
+        // Esto previene errores de asignación si el email contiene uno o dos vuelos.
+        const finalTrip = aiResponse.flights.reduce((acc, flight) => {
+            const depCode = flight.departureAirportCode?.toUpperCase().trim();
 
-        // Si solo hay un vuelo en el email y no coincide con las reglas principales, 
-        // lo asignamos a un campo para no perderlo.
-        if (aiResponse.flights.length === 1 && !departureFlight && !returnFlight) {
-            const singleFlight = aiResponse.flights[0];
-            // Lógica de fallback: si es de Salta es ida, sino es vuelta.
-            if (singleFlight.departureAirportCode?.toUpperCase().trim() === 'SLA') {
-                finalTrip.departureFlight = singleFlight;
-            } else {
-                finalTrip.returnFlight = singleFlight;
+            // Identifica el vuelo de IDA (sale de Salta)
+            if (depCode === 'SLA' && !acc.departureFlight) {
+                acc.departureFlight = flight;
+            } 
+            // Identifica el vuelo de VUELTA (sale de Buenos Aires)
+            else if ((depCode === 'AEP' || depCode === 'EZE') && !acc.returnFlight) {
+                acc.returnFlight = flight;
             }
+            return acc;
+        }, initialTrip);
+
+        // Validación final: si no se extrajo ningún vuelo, lanzar un error.
+        if (!finalTrip.departureFlight && !finalTrip.returnFlight) {
+            throw new Error("La IA no pudo extraer ningún detalle de vuelo válido del correo.");
         }
+
+        return finalTrip;
     }
 
-    // Validación final: si no se extrajo ningún vuelo, lanzar un error.
-    if (!finalTrip.departureFlight && !finalTrip.returnFlight) {
-        throw new Error("La IA no pudo extraer ningún detalle de vuelo válido del correo.");
-    }
-
-    return finalTrip;
+    throw new Error("La IA no pudo encontrar ningún vuelo en el texto proporcionado.");
     
   } catch (error: any) {
     console.error('Error procesando el email con Gemini:', error);
