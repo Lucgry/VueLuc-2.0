@@ -320,57 +320,61 @@ const App: React.FC = () => {
 const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
     if (!user || !db) throw new Error("Usuario no autenticado.");
 
-    const isSingleIda = newTripData.departureFlight && !newTripData.returnFlight;
-    const isSingleVuelta = !newTripData.departureFlight && newTripData.returnFlight;
-    
-    // Using a generous 20-day window to match flights, which covers weekly trips with flexibility.
-    const MAX_DAYS_BETWEEN_FLIGHTS = 20; 
+    const isAddingIda = newTripData.departureFlight && !newTripData.returnFlight;
+    const isAddingVuelta = !newTripData.departureFlight && newTripData.returnFlight;
+
+    // A more focused 10-day window for weekly trips.
+    const MAX_DAYS_BETWEEN_FLIGHTS = 10;
     const MAX_TIME_MS = MAX_DAYS_BETWEEN_FLIGHTS * 24 * 60 * 60 * 1000;
 
-    // The `trips` state is sorted by creation date descending, ensuring we match with the most recent counterpart.
-    if (isSingleIda) {
-        const newIda = newTripData.departureFlight!;
-        const newIdaArrival = new Date(newIda.arrivalDateTime!).getTime();
-        
-        const matchingTrip = trips.find(trip => {
-            if (!trip.returnFlight || trip.departureFlight) return false;
+    // The `trips` array from Firestore is sorted by `createdAt` descending,
+    // so iterating will check against the most recent trips first.
 
-            const existingVueltaDeparture = new Date(trip.returnFlight.departureDateTime!).getTime();
-            const timeDiff = existingVueltaDeparture - newIdaArrival;
-            
-            return timeDiff > 0 && timeDiff < MAX_TIME_MS;
-        });
-
-        if (matchingTrip) {
-            await handleUpdateTrip(matchingTrip.id, { departureFlight: newIda });
-            setIsModalOpen(false);
-            setIsQuickAddModalOpen(false);
-            return;
-        }
-    }
-
-    if (isSingleVuelta) {
+    if (isAddingVuelta) {
         const newVuelta = newTripData.returnFlight!;
         const newVueltaDeparture = new Date(newVuelta.departureDateTime!).getTime();
-        
-        const matchingTrip = trips.find(trip => {
-            if (!trip.departureFlight || trip.returnFlight) return false;
 
-            const existingIdaArrival = new Date(trip.departureFlight.arrivalDateTime!).getTime();
-            const timeDiff = newVueltaDeparture - existingIdaArrival;
+        for (const existingTrip of trips) {
+            // Find an incomplete trip that HAS an "ida" but is MISSING a "vuelta".
+            if (existingTrip.departureFlight && !existingTrip.returnFlight) {
+                const existingIdaArrival = new Date(existingTrip.departureFlight.arrivalDateTime!).getTime();
+                const timeDiff = newVueltaDeparture - existingIdaArrival;
 
-            return timeDiff > 0 && timeDiff < MAX_TIME_MS;
-        });
-
-        if (matchingTrip) {
-            await handleUpdateTrip(matchingTrip.id, { returnFlight: newVuelta });
-            setIsModalOpen(false);
-            setIsQuickAddModalOpen(false);
-            return;
+                // Check if the new "vuelta" departs after the "ida" arrived and is within the time window.
+                if (timeDiff > 0 && timeDiff < MAX_TIME_MS) {
+                    // Match found! Update this trip and stop.
+                    await handleUpdateTrip(existingTrip.id, { returnFlight: newVuelta });
+                    setIsModalOpen(false);
+                    setIsQuickAddModalOpen(false);
+                    return; // Exit the function
+                }
+            }
         }
     }
 
-    // If no match was found, create a new trip record.
+    if (isAddingIda) {
+        const newIda = newTripData.departureFlight!;
+        const newIdaArrival = new Date(newIda.arrivalDateTime!).getTime();
+
+        for (const existingTrip of trips) {
+            // Find an incomplete trip that HAS a "vuelta" but is MISSING an "ida".
+            if (existingTrip.returnFlight && !existingTrip.departureFlight) {
+                const existingVueltaDeparture = new Date(existingTrip.returnFlight.departureDateTime!).getTime();
+                const timeDiff = existingVueltaDeparture - newIdaArrival;
+
+                // Check if the new "ida" arrives before the "vuelta" departs and is within the time window.
+                if (timeDiff > 0 && timeDiff < MAX_TIME_MS) {
+                     // Match found! Update this trip and stop.
+                    await handleUpdateTrip(existingTrip.id, { departureFlight: newIda });
+                    setIsModalOpen(false);
+                    setIsQuickAddModalOpen(false);
+                    return; // Exit the function
+                }
+            }
+        }
+    }
+
+    // If we reach this point, no suitable match was found, so we create a new trip.
     try {
       const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
       await addDoc(tripsCollectionRef, {
