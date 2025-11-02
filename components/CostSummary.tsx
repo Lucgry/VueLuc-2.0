@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import type { FlightLeg } from '../types';
+import type { Trip } from '../types';
 import { BriefcaseIcon } from './icons/BriefcaseIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { CurrencyIcon } from './icons/CurrencyIcon';
 
 interface CostSummaryProps {
-  flightLegs: FlightLeg[];
+  trips: Trip[];
 }
 
 const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string; gradient: string }> = ({ icon, label, value, gradient }) => (
@@ -20,102 +20,125 @@ const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string; 
     </div>
 );
 
-const getFlightLegEndDate = (leg: FlightLeg): Date | null => {
-    return leg.arrivalDateTime ? new Date(leg.arrivalDateTime) : null;
+const getTripEndDate = (trip: Trip): Date | null => {
+    const dateStr = trip.returnFlight?.arrivalDateTime || trip.departureFlight?.arrivalDateTime;
+    return dateStr ? new Date(dateStr) : null;
 };
 
 const formatPaymentMethod = (paymentMethod: string | null): string => {
   if (!paymentMethod) return 'N/A';
+
   if (paymentMethod.includes('6007')) return 'Débito Macro';
   if (paymentMethod.includes('9417')) return 'Débito Ciudad';
   if (paymentMethod.includes('5603')) return 'Crédito Macro';
   if (paymentMethod.includes('8769')) return 'Crédito Ciudad';
   if (paymentMethod.includes('8059')) return 'Crédito Yoy';
   
+  // Return the formatted name if it's already one of the standards, otherwise return the raw string.
   const standards = ['Débito Macro', 'Débito Ciudad', 'Crédito Macro', 'Crédito Ciudad', 'Crédito Yoy'];
   if (standards.includes(paymentMethod)) return paymentMethod;
+
   return paymentMethod;
 };
 
-const CostSummary: React.FC<CostSummaryProps> = ({ flightLegs }) => {
+const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
     const availableYears = useMemo(() => {
-        const yearsSet = flightLegs.reduce((acc, leg) => {
-            const costDateStr = leg.purchaseDate || leg.createdAt;
+        const yearsSet = trips.reduce((acc, trip) => {
+            const costDateStr = trip.purchaseDate || trip.createdAt;
             if (costDateStr) {
-                acc.add(new Date(costDateStr).getFullYear());
+                const year = new Date(costDateStr).getFullYear();
+                if (!Number.isNaN(year)) {
+                    acc.add(year);
+                }
             }
             return acc;
         }, new Set<number>());
 
-        const uniqueYears = Array.from(yearsSet).sort((a, b) => b - a);
+        const uniqueYears = Array.from(yearsSet).sort((a: number, b: number) => b - a);
+
         if (uniqueYears.length === 0 || !uniqueYears.includes(new Date().getFullYear())) {
             uniqueYears.unshift(new Date().getFullYear());
         }
         return uniqueYears;
-    }, [flightLegs]);
+    }, [trips]);
     
-    const legsForSelectedYear = useMemo(() => {
-        return flightLegs.filter(leg => {
-            const costDateStr = leg.purchaseDate || leg.createdAt;
+    const tripsForSelectedYear = useMemo(() => {
+        return trips.filter(trip => {
+            const costDateStr = trip.purchaseDate || trip.createdAt;
             return costDateStr ? new Date(costDateStr).getFullYear() === selectedYear : false;
         });
-    }, [flightLegs, selectedYear]);
+    }, [trips, selectedYear]);
     
     const completedTripsForYear = useMemo(() => {
         const now = new Date();
-        const completedTripIds = new Set<string>();
-        
-        legsForSelectedYear.forEach(leg => {
-            const endDate = getFlightLegEndDate(leg);
-            if (endDate && endDate < now) {
-                completedTripIds.add(leg.tripId || leg.id);
-            }
+        return tripsForSelectedYear.filter(trip => {
+            const endDate = getTripEndDate(trip);
+            return endDate ? endDate < now : false;
         });
-        return completedTripIds.size;
-    }, [legsForSelectedYear]);
+    }, [tripsForSelectedYear]);
 
+    const totalCompletedTrips = completedTripsForYear.length;
+    
     const totalCostForYear = useMemo(() => {
-        return legsForSelectedYear.reduce((sum, leg) => sum + (leg.cost || 0), 0);
-    }, [legsForSelectedYear]);
+        return tripsForSelectedYear.reduce((sum, trip) => {
+            const idaCost = trip.departureFlight?.cost || 0;
+            const vueltaCost = trip.returnFlight?.cost || 0;
+            return sum + idaCost + vueltaCost;
+        }, 0);
+    }, [tripsForSelectedYear]);
 
     const paymentMethodSummary = useMemo(() => {
         const costsByMethod: { [key: string]: number } = {};
         
-        legsForSelectedYear.forEach(leg => {
-            if (leg.cost && leg.paymentMethod) {
-                const formattedMethod = formatPaymentMethod(leg.paymentMethod);
-                if (formattedMethod !== 'N/A') {
-                    costsByMethod[formattedMethod] = (costsByMethod[formattedMethod] || 0) + leg.cost;
+        tripsForSelectedYear.forEach(trip => {
+            [trip.departureFlight, trip.returnFlight].forEach(flight => {
+                if (flight && flight.cost && flight.paymentMethod) {
+                    const formattedMethod = formatPaymentMethod(flight.paymentMethod);
+                    if (formattedMethod !== 'N/A') {
+                        costsByMethod[formattedMethod] = (costsByMethod[formattedMethod] || 0) + flight.cost;
+                    }
                 }
-            }
+            });
         });
 
         return Object.entries(costsByMethod)
             .map(([method, total]) => ({ method, total }))
             .sort((a, b) => b.total - a.total);
-    }, [legsForSelectedYear]);
+    }, [tripsForSelectedYear]);
     
     const monthlyBreakdown = useMemo(() => {
-        const costsByMonth: number[] = Array(12).fill(0);
+        const costsByMonth: { [monthIndex: number]: number } = {};
 
-        for (const leg of legsForSelectedYear) {
-            const costDateStr = leg.purchaseDate || leg.createdAt;
-            if (costDateStr && leg.cost) {
-                const purchaseDate = new Date(costDateStr);
-                const monthIndex = purchaseDate.getMonth();
-                costsByMonth[monthIndex] += leg.cost;
+        for (const trip of tripsForSelectedYear) {
+            // Regla de negocio: La fecha del gasto es la de compra, o la de creación si la primera no está disponible.
+            const costDateStr = trip.purchaseDate || trip.createdAt;
+            if (!costDateStr) continue;
+
+            const purchaseDate = new Date(costDateStr);
+            const monthIndex = purchaseDate.getMonth(); // 0 para Enero, 11 para Diciembre
+            if (isNaN(monthIndex)) continue;
+            
+            const totalTripCost = (trip.departureFlight?.cost || 0) + (trip.returnFlight?.cost || 0);
+
+            if (totalTripCost > 0) {
+                costsByMonth[monthIndex] = (costsByMonth[monthIndex] || 0) + totalTripCost;
             }
         }
         
         const allMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-        return allMonths.map((name, index) => ({ name, cost: costsByMonth[index] }));
-    }, [legsForSelectedYear]);
+        
+        return allMonths.map((name, index) => ({
+            name,
+            cost: costsByMonth[index] || 0,
+        }));
+    }, [tripsForSelectedYear]);
 
-    const maxMonthlyCost = Math.max(...monthlyBreakdown.map(m => m.cost), 1);
+    const maxMonthlyCost = Math.max(...monthlyBreakdown.map(m => m.cost), 1); // Avoid division by zero
 
-    if (flightLegs.length === 0) {
+
+    if (trips.length === 0) {
         return (
             <div className="text-center py-20 px-6 bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out">
                 <CalculatorIcon className="mx-auto h-16 w-16 text-slate-500 dark:text-slate-400" />
@@ -142,7 +165,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ flightLegs }) => {
                 <StatCard 
                     icon={<BriefcaseIcon className="h-6 w-6" />}
                     label="Viajes Realizados"
-                    value={completedTripsForYear.toString()}
+                    value={totalCompletedTrips.toString()}
                     gradient="bg-gradient-to-br from-indigo-500 to-purple-600"
                 />
                  <StatCard 
@@ -184,6 +207,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ flightLegs }) => {
             <div className="space-y-3">
                 {monthlyBreakdown.map(({ name, cost }) => {
                     const widthPercentage = maxMonthlyCost > 0 ? (cost / maxMonthlyCost) * 100 : 0;
+
                     return (
                         <div key={name} className="flex items-center gap-3 sm:gap-4 text-sm">
                             <span className="font-semibold text-slate-600 dark:text-slate-400 w-10 text-right">{name}</span>

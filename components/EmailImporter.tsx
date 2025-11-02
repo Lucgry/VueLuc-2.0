@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import type { Flight } from '../types';
+import type { Trip } from '../types';
 import { parseFlightEmail } from '../services/geminiService';
 import { Spinner } from './Spinner';
 import { MailIcon } from './icons/MailIcon';
 
 interface EmailImporterProps {
   onClose: () => void;
-  onAddFlights: (flights: Flight[], purchaseDate: string) => Promise<void>;
+  onAddTrip: (newTrip: Omit<Trip, 'id' | 'createdAt'>) => Promise<void>;
   apiKey: string;
   onInvalidApiKey: () => void;
 }
@@ -24,7 +24,7 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-const EmailImporter: React.FC<EmailImporterProps> = ({ onClose, onAddFlights, apiKey, onInvalidApiKey }) => {
+const EmailImporter: React.FC<EmailImporterProps> = ({ onClose, onAddTrip, apiKey, onInvalidApiKey }) => {
   const [emailText, setEmailText] = useState('');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,8 +42,8 @@ const EmailImporter: React.FC<EmailImporterProps> = ({ onClose, onAddFlights, ap
       if (pdfFile) {
         pdfBase64 = await fileToBase64(pdfFile);
       }
-      const { flights, purchaseDate } = await parseFlightEmail(apiKey, emailText, pdfBase64);
-      await onAddFlights(flights, purchaseDate);
+      const newTrip = await parseFlightEmail(apiKey, emailText, pdfBase64);
+      await onAddTrip(newTrip);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ocurrió un error inesperado.';
       if (message.includes('La API Key no es válida')) {

@@ -6,12 +6,16 @@ import { CalendarClockIcon } from './icons/CalendarClockIcon';
 import { CheckBadgeIcon } from './icons/CheckBadgeIcon';
 import { BriefcaseIcon } from './icons/BriefcaseIcon';
 
+
 interface TripListProps {
   trips: Trip[];
-  onDeleteTrip: (trip: Trip) => void;
-  listFilter: 'all' | 'future' | 'completed';
+  onDeleteTrip: (tripId: string) => void;
+  listFilter: 'all' | 'future' | 'currentMonth' | 'completed';
   nextTripId: string | null;
   userId: string;
+  groupingState: { active: boolean; sourceTrip: Trip | null };
+  onStartGrouping: (trip: Trip) => void;
+  onConfirmGrouping: (targetTrip: Trip) => void;
 }
 
 const emptyMessages = {
@@ -52,8 +56,8 @@ const YearSeparator: React.FC<{ year: number }> = ({ year }) => (
   </div>
 );
 
-const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, nextTripId, userId }) => {
-  if (trips.length === 0) {
+const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, nextTripId, userId, groupingState, onStartGrouping, onConfirmGrouping }) => {
+  if (trips.length === 0 && !groupingState.active) {
     const { title, message, icon } = emptyMessages[listFilter] || emptyMessages.future;
     return (
       <div className="text-center py-20 px-6 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-slate-200 dark:border-slate-700/50 rounded-xl">
@@ -88,10 +92,13 @@ const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, ne
             {yearSeparator}
             <TripCard 
               trip={trip} 
-              onDelete={() => onDeleteTrip(trip)}
+              onDelete={() => onDeleteTrip(trip.id)}
               isPast={isPast}
               isNext={isNext}
               userId={userId}
+              groupingState={groupingState}
+              onStartGrouping={onStartGrouping}
+              onConfirmGrouping={onConfirmGrouping}
             />
           </React.Fragment>
         );

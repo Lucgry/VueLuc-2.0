@@ -12,26 +12,13 @@ export interface Flight {
   bookingReference: string | null;
 }
 
-export type FlightStatus = 'paired' | 'loose';
-
-export interface FlightLeg extends Flight {
+export interface Trip {
   id: string;
   createdAt: string;
   purchaseDate?: string;
-  status: FlightStatus;
-  tripId: string | null; // ID que agrupa una ida y una vuelta
-  type: 'ida' | 'vuelta';
+  departureFlight: Flight | null;
+  returnFlight: Flight | null;
 }
-
-// Este tipo se usa para agrupar tramos para la visualización en TripCard
-// FIX: Renamed DisplayTrip to Trip to resolve import errors.
-export interface Trip {
-  id: string; // Será el tripId si está emparejado, o el id del leg si está suelto
-  departureFlight: FlightLeg | null;
-  returnFlight: FlightLeg | null;
-  isPaired: boolean;
-}
-
 
 export interface BoardingPassData {
   fileURL: string;
@@ -40,6 +27,7 @@ export interface BoardingPassData {
 
 export interface BoardingPassFile {
     id: string;
-    legId: string;
+    tripId: string;
+    flightType: 'ida' | 'vuelta';
     file: File;
 }
