@@ -123,6 +123,9 @@ export const parseFlightEmail = async (apiKey: string, emailText: string, pdfBas
 
       const departureCode = flight.departureAirportCode.toUpperCase().trim();
       
+      // REGLA DE ORO: El viaje de ida es siempre desde Salta.
+      // Ida: Salta -> Buenos Aires (departureFlight)
+      // Vuelta: Buenos Aires -> Salta (returnFlight)
       if (departureCode === SALTA_CODE) {
         if (!finalTrip.departureFlight) {
           finalTrip.departureFlight = flight;
