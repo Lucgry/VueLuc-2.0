@@ -28,6 +28,7 @@ const formatDateForInput = (date: Date): string => {
 
 interface FlightData {
     flightNum: string;
+    bookingReference: string;
     airline: string;
     depCode: string;
     depCity: string;
@@ -42,14 +43,14 @@ interface FlightData {
 }
 
 const initialIdaData: FlightData = {
-    flightNum: '', airline: '', depCode: 'SLA', depCity: 'Salta', arrCode: 'AEP', arrCity: 'Buenos Aires',
+    flightNum: '', bookingReference: '', airline: '', depCode: 'SLA', depCity: 'Salta', arrCode: 'AEP', arrCity: 'Buenos Aires',
     depDate: formatDateForInput(getNextDayOfWeek(2)), depTime: '11:00',
     arrDate: formatDateForInput(getNextDayOfWeek(2)), arrTime: '13:05',
     cost: '', paymentMethod: 'Débito Macro'
 };
 
 const initialVueltaData: FlightData = {
-    flightNum: '', airline: '', depCode: 'AEP', depCity: 'Buenos Aires', arrCode: 'SLA', arrCity: 'Salta',
+    flightNum: '', bookingReference: '', airline: '', depCode: 'AEP', depCity: 'Buenos Aires', arrCode: 'SLA', arrCity: 'Salta',
     depDate: formatDateForInput(getNextDayOfWeek(5)), depTime: '19:30',
     arrDate: formatDateForInput(getNextDayOfWeek(5)), arrTime: '21:35',
     cost: '', paymentMethod: 'Débito Macro'
@@ -83,6 +84,7 @@ const FlightFieldSet: React.FC<{
             <legend className="px-2 font-semibold text-indigo-600 dark:text-indigo-400">{title}</legend>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div><label className="text-xs font-medium text-slate-600 dark:text-slate-400">Nº de Vuelo</label><input type="text" value={data.flightNum} onChange={handleInputChange('flightNum')} placeholder="AR1451" className={inputClasses} /></div>
+                <div><label className="text-xs font-medium text-slate-600 dark:text-slate-400">Cód. Reserva</label><input type="text" value={data.bookingReference} onChange={handleInputChange('bookingReference')} placeholder="ABCDEF" className={inputClasses} /></div>
                 <div><label className="text-xs font-medium text-slate-600 dark:text-slate-400">Aerolínea</label><input type="text" value={data.airline} onChange={handleInputChange('airline')} placeholder="Aerolineas Argentinas" className={inputClasses} /></div>
                 <div><label className="text-xs font-medium text-slate-600 dark:text-slate-400">Cód. Origen</label><input type="text" value={data.depCode} onChange={handleInputChange('depCode')} placeholder="SLA" className={inputClasses} /></div>
                 <div><label className="text-xs font-medium text-slate-600 dark:text-slate-400">Cód. Destino</label><input type="text" value={data.arrCode} onChange={handleInputChange('arrCode')} placeholder="AEP" className={inputClasses} /></div>
@@ -103,7 +105,6 @@ const FlightFieldSet: React.FC<{
 const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => {
     const [idaData, setIdaData] = useState<FlightData>(initialIdaData);
     const [vueltaData, setVueltaData] = useState<FlightData>(initialVueltaData);
-    const [bookingRef, setBookingRef] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
@@ -125,16 +126,17 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
             arrDateTime.setUTCHours(arrHours, arrMinutes, 0, 0);
 
             return {
-                flightNumber: data.flightNum.toUpperCase(),
+                flightNumber: data.flightNum.toUpperCase().trim(),
                 airline: data.airline.trim(),
-                departureAirportCode: data.depCode.toUpperCase(),
+                departureAirportCode: data.depCode.toUpperCase().trim(),
                 departureCity: data.depCity.trim(),
-                arrivalAirportCode: data.arrCode.toUpperCase(),
+                arrivalAirportCode: data.arrCode.toUpperCase().trim(),
                 arrivalCity: data.arrCity.trim(),
                 departureDateTime: depDateTime.toISOString(),
                 arrivalDateTime: arrDateTime.toISOString(),
                 cost: data.cost ? parseFloat(data.cost) : null,
-                paymentMethod: data.paymentMethod
+                paymentMethod: data.paymentMethod,
+                bookingReference: data.bookingReference.toUpperCase().trim() || null,
             };
         };
         
@@ -142,18 +144,20 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
             const departureFlight = createFlightObject(idaData);
             const returnFlight = createFlightObject(vueltaData);
             
-            if (!bookingRef.trim()) {
-                throw new Error('El código de reserva es obligatorio.');
-            }
-
             if (!departureFlight && !returnFlight) {
                 throw new Error('Debes completar los datos de al menos un tramo (ida o vuelta).');
             }
+            if (departureFlight && !departureFlight.bookingReference) {
+                 throw new Error('El código de reserva de Ida es obligatorio si completas ese tramo.');
+            }
+            if (returnFlight && !returnFlight.bookingReference) {
+                 throw new Error('El código de reserva de Vuelta es obligatorio si completas ese tramo.');
+            }
+
 
             const newTrip: Omit<Trip, 'id' | 'createdAt'> = {
                 departureFlight,
                 returnFlight,
-                bookingReference: bookingRef.toUpperCase(),
             };
             await onAddTrip(newTrip);
         } catch (err) {
@@ -186,10 +190,6 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
                             <div className="space-y-4">
                                <FlightFieldSet title="✈️ Ida" data={idaData} setData={setIdaData} />
                                <FlightFieldSet title="✈️ Vuelta" data={vueltaData} setData={setVueltaData} />
-                                <div className="pt-2">
-                                    <label htmlFor="booking-ref" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Código de Reserva</label>
-                                    <input id="booking-ref" type="text" value={bookingRef} onChange={e => setBookingRef(e.target.value)} placeholder="Código único o combinado" className={inputClasses} required />
-                                </div>
                             </div>
                         </div>
                     </div>

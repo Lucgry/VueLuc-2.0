@@ -9,6 +9,7 @@ export interface Flight {
   arrivalDateTime: string | null;
   cost: number | null;
   paymentMethod: string | null;
+  bookingReference: string | null;
 }
 
 export interface Trip {
@@ -17,7 +18,6 @@ export interface Trip {
   purchaseDate?: string;
   departureFlight: Flight | null;
   returnFlight: Flight | null;
-  bookingReference: string | null;
 }
 
 export interface BoardingPassData {

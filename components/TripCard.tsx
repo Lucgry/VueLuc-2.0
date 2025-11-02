@@ -291,6 +291,8 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
     
     const idaAirline = trip.departureFlight?.airline;
     const vueltaAirline = trip.returnFlight?.airline;
+    const idaRef = trip.departureFlight?.bookingReference;
+    const vueltaRef = trip.returnFlight?.bookingReference;
     
     const getNormalizedAirline = (name: string | null | undefined): string => {
         if (!name) return '';
@@ -314,13 +316,12 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
     }
     
     const generateShareableText = (tripToShare: Trip): string => {
-        const { departureFlight, returnFlight, bookingReference } = tripToShare;
+        const { departureFlight, returnFlight } = tripToShare;
         
-        let text = `✈️ Viaje a ${departureFlight?.arrivalCity || returnFlight?.departureCity || 'Destino'} (VueLuc 2.0)\n`;
-        text += `Reserva: ${bookingReference || 'N/A'}\n\n`;
+        let text = `✈️ Viaje a ${departureFlight?.arrivalCity || returnFlight?.departureCity || 'Destino'} (VueLuc 2.0)\n\n`;
 
         if (departureFlight) {
-            text += '🛫 IDA:\n';
+            text += `🛫 IDA (Reserva: ${departureFlight.bookingReference || 'N/A'}):\n`;
             text += `${departureFlight.airline || ''} (Vuelo ${departureFlight.flightNumber || ''})\n`;
             text += `🗓️ ${formatDate(departureFlight.departureDateTime)}\n`;
             text += `Sale ${departureFlight.departureCity} (${departureFlight.departureAirportCode}) a las ${formatTime(departureFlight.departureDateTime)} hs\n`;
@@ -328,7 +329,7 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
         }
 
         if (returnFlight) {
-            text += '🛬 VUELTA:\n';
+            text += `🛬 VUELTA (Reserva: ${returnFlight.bookingReference || 'N/A'}):\n`;
             text += `${returnFlight.airline || ''} (Vuelo ${returnFlight.flightNumber || ''})\n`;
             text += `🗓️ ${formatDate(returnFlight.departureDateTime)}\n`;
             text += `Sale ${returnFlight.departureCity} (${returnFlight.departureAirportCode}) a las ${formatTime(returnFlight.departureDateTime)} hs\n`;
@@ -418,7 +419,10 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                         </div>
                         <div className="flex items-center justify-end space-x-2">
                             <p className="text-xs font-medium text-slate-600 dark:text-slate-400">{tripTypeText}</p>
-                            {trip.bookingReference && <p className="font-mono bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-md text-xs font-semibold">{trip.bookingReference}</p>}
+                             <div className="flex flex-wrap gap-1 justify-end">
+                                {idaRef && <p className="font-mono bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-md text-xs font-semibold">{idaRef}</p>}
+                                {vueltaRef && idaRef?.trim().toUpperCase() !== vueltaRef?.trim().toUpperCase() && <p className="font-mono bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-md text-xs font-semibold">{vueltaRef}</p>}
+                            </div>
                             <ChevronDownIcon className={`h-6 w-6 text-slate-500 dark:text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
                         </div>
                     </div>

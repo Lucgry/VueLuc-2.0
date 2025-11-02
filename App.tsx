@@ -306,41 +306,76 @@ const App: React.FC = () => {
       setIsAirportMode(prev => !prev);
   }
 
+  const handleUpdateTrip = async (tripId: string, updatedData: Partial<Omit<Trip, 'id' | 'createdAt'>>) => {
+    if (!user || !db) return;
+    try {
+        const tripDocRef = doc(db, 'users', user.uid, 'trips', tripId);
+        await updateDoc(tripDocRef, updatedData);
+    } catch (error) {
+        console.error("Error updating trip in Firestore:", error);
+        alert('No se pudo actualizar el viaje. Por favor, intenta de nuevo.');
+    }
+  };
+
   const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
     if (!user || !db) throw new Error("Usuario no autenticado.");
 
-    const getDuplicateFlightError = (flightToCheck: Flight | null, allTrips: Trip[]): string | null => {
-        if (!flightToCheck?.flightNumber || !flightToCheck.departureDateTime || !flightToCheck.departureAirportCode) {
-            return null;
-        }
-        
-        const normalize = (str: string) => str.toUpperCase().trim();
-        const newFlightNum = normalize(flightToCheck.flightNumber);
-        const newDepDate = flightToCheck.departureDateTime.split('T')[0];
-        const newDepAirport = normalize(flightToCheck.departureAirportCode);
+    // --- LOGICA DE AGRUPACIÓN POR FECHAS ---
+    const isSingleIda = newTripData.departureFlight && !newTripData.returnFlight;
+    const isSingleVuelta = !newTripData.departureFlight && newTripData.returnFlight;
+    
+    if (isSingleIda) {
+        const ida = newTripData.departureFlight!;
+        const idaArrivalTime = new Date(ida.arrivalDateTime!).getTime();
 
-        for (const existingTrip of allTrips) {
-            for (const existingFlight of [existingTrip.departureFlight, existingTrip.returnFlight]) {
-                if (existingFlight?.flightNumber && existingFlight.departureDateTime && existingFlight.departureAirportCode) {
-                    if (
-                        normalize(existingFlight.flightNumber) === newFlightNum &&
-                        existingFlight.departureDateTime.split('T')[0] === newDepDate &&
-                        normalize(existingFlight.departureAirportCode) === newDepAirport
-                    ) {
-                        const formattedDate = new Date(newDepDate + 'T12:00:00Z').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
-                        return `Vuelo duplicado: El vuelo ${newFlightNum} del ${formattedDate} ya existe.`;
-                    }
-                }
+        const potentialMatches = trips.filter(t => t.returnFlight && !t.departureFlight);
+        
+        if (potentialMatches.length > 0) {
+            potentialMatches.sort((a, b) => 
+                new Date(a.returnFlight!.departureDateTime!).getTime() - 
+                new Date(b.returnFlight!.departureDateTime!).getTime()
+            );
+
+            const bestMatch = potentialMatches.find(t => 
+                new Date(t.returnFlight!.departureDateTime!).getTime() > idaArrivalTime
+            );
+
+            if (bestMatch) {
+                await handleUpdateTrip(bestMatch.id, { departureFlight: ida });
+                setIsModalOpen(false);
+                setIsQuickAddModalOpen(false);
+                return;
             }
         }
-        return null;
-    };
+    }
+    
+    if (isSingleVuelta) {
+        const vuelta = newTripData.returnFlight!;
+        const vueltaDepartureTime = new Date(vuelta.departureDateTime!).getTime();
 
-    const idaError = getDuplicateFlightError(newTripData.departureFlight, trips);
-    if (idaError) throw new Error(idaError);
+        const potentialMatches = trips.filter(t => t.departureFlight && !t.returnFlight);
+        
+        if (potentialMatches.length > 0) {
+            const pastIdaFlights = potentialMatches.filter(t => 
+                new Date(t.departureFlight!.departureDateTime!).getTime() < vueltaDepartureTime
+            );
 
-    const vueltaError = getDuplicateFlightError(newTripData.returnFlight, trips);
-    if (vueltaError) throw new Error(vueltaError);
+            if (pastIdaFlights.length > 0) {
+                pastIdaFlights.sort((a, b) => 
+                    new Date(b.departureFlight!.departureDateTime!).getTime() - 
+                    new Date(a.departureFlight!.departureDateTime!).getTime()
+                );
+                
+                const bestMatch = pastIdaFlights[0];
+                
+                await handleUpdateTrip(bestMatch.id, { returnFlight: vuelta });
+                setIsModalOpen(false);
+                setIsQuickAddModalOpen(false);
+                return;
+            }
+        }
+    }
+    // --- FIN DE LOGICA DE AGRUPACIÓN ---
 
     try {
       const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
@@ -353,17 +388,6 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("Error adding trip to Firestore:", error);
       throw new Error('No se pudo guardar el viaje en la base de datos. Inténtalo de nuevo.');
-    }
-  };
-
-  const handleUpdateTrip = async (tripId: string, updatedData: Partial<Trip>) => {
-    if (!user || !db) return;
-    try {
-        const tripDocRef = doc(db, 'users', user.uid, 'trips', tripId);
-        await updateDoc(tripDocRef, updatedData);
-    } catch (error) {
-        console.error("Error updating trip in Firestore:", error);
-        alert('No se pudo actualizar el viaje. Por favor, intenta de nuevo.');
     }
   };
 
