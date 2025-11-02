@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { Trip, Flight } from './types';
 import Header from './components/Header';
 import TripList from './components/TripList';
@@ -25,10 +25,6 @@ import { FullScreenLoader } from './components/Spinner';
 import { BoltIcon } from './components/icons/BoltIcon';
 import { InformationCircleIcon } from './components/icons/InformationCircleIcon';
 import { ClockIcon } from './components/icons/ClockIcon';
-import { ArrowUpRightIcon } from './components/icons/ArrowUpRightIcon';
-import { CalendarClockIcon } from './components/icons/CalendarClockIcon';
-import { CheckBadgeIcon } from './components/icons/CheckBadgeIcon';
-import { BriefcaseIcon } from './components/icons/BriefcaseIcon';
 
 // A type guard for BeforeInstallPromptEvent
 interface BeforeInstallPromptEvent extends Event {
@@ -191,6 +187,8 @@ const App: React.FC = () => {
     return 'light';
   });
   
+  const processingRef = useRef(false);
+
   // Authentication effect
   useEffect(() => {
     if (!auth) return;
@@ -236,9 +234,84 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  const mergeTrips = useCallback(async (idaTrip: Trip, vueltaTrip: Trip) => {
+    if (!user || !db) return;
+    try {
+      const updatedData: Partial<Omit<Trip, 'id' | 'createdAt'>> = {
+        departureFlight: idaTrip.departureFlight,
+        returnFlight: vueltaTrip.returnFlight,
+      };
+
+      if (idaTrip.purchaseDate && vueltaTrip.purchaseDate) {
+        updatedData.purchaseDate = new Date(idaTrip.purchaseDate) < new Date(vueltaTrip.purchaseDate) ? idaTrip.purchaseDate : vueltaTrip.purchaseDate;
+      } else {
+        updatedData.purchaseDate = idaTrip.purchaseDate || vueltaTrip.purchaseDate;
+      }
+
+      const idaTripRef = doc(db, 'users', user.uid, 'trips', idaTrip.id);
+      const vueltaTripRef = doc(db, 'users', user.uid, 'trips', vueltaTrip.id);
+
+      await updateDoc(idaTripRef, updatedData);
+
+      const vueltaPass = await getBoardingPass(user.uid, vueltaTrip.id, 'vuelta');
+      if (vueltaPass.exists && vueltaPass.file) {
+        await saveBoardingPass(user.uid, idaTrip.id, 'vuelta', vueltaPass.file);
+      }
+      
+      await deleteDoc(vueltaTripRef);
+
+    } catch (error) {
+      console.error("Error al fusionar viajes:", error);
+      throw new Error("Ocurrió un error al fusionar los viajes.");
+    }
+  }, [user]);
+
+  const runAutomaticGrouping = useCallback(async (currentTrips: Trip[]) => {
+      if (!user || !db || processingRef.current) return;
+
+      const singleLegs = currentTrips.filter(t => (!!t.departureFlight) !== (!!t.returnFlight));
+      if (singleLegs.length < 2) return;
+
+      processingRef.current = true;
+
+      const sortedLegs = singleLegs.sort((a, b) => {
+          const dateA = getTripStartDate(a);
+          const dateB = getTripStartDate(b);
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          return dateA.getTime() - dateB.getTime();
+      });
+
+      const unpairedLegs = sortedLegs.map(trip => ({ trip, paired: false }));
+
+      for (let i = 0; i < unpairedLegs.length; i++) {
+          if (unpairedLegs[i].paired) continue;
+
+          const currentLeg = unpairedLegs[i].trip;
+          const isIda = !!currentLeg.departureFlight;
+
+          if (isIda) {
+              const nextLegIndex = i + 1;
+              if (nextLegIndex < unpairedLegs.length && !unpairedLegs[nextLegIndex].paired) {
+                  const nextLeg = unpairedLegs[nextLegIndex].trip;
+                  const isVuelta = !!nextLeg.returnFlight;
+                  if (isVuelta) {
+                      console.log(`Emparejando IDA ${currentLeg.id} con VUELTA ${nextLeg.id}`);
+                      await mergeTrips(currentLeg, nextLeg);
+                      unpairedLegs[i].paired = true;
+                      unpairedLegs[nextLegIndex].paired = true;
+                  }
+              }
+          }
+      }
+      
+      processingRef.current = false;
+  }, [user, db, mergeTrips]);
+
+
   // Firestore data loading effect
   useEffect(() => {
-    if (!user || !db || authRuntimeError) { // Do not fetch if there's an auth error
+    if (!user || !db || authRuntimeError) {
       setTrips([]);
       return;
     }
@@ -252,12 +325,13 @@ const App: React.FC = () => {
         tripsFromFirestore.push({ id: doc.id, ...doc.data() } as Trip);
       });
       setTrips(tripsFromFirestore);
+      runAutomaticGrouping(tripsFromFirestore);
     }, (error) => {
         console.error("Error fetching trips from Firestore:", error);
     });
 
     return () => unsubscribe();
-  }, [user, authRuntimeError]);
+  }, [user, authRuntimeError, runAutomaticGrouping]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (event: Event) => {
@@ -307,109 +381,18 @@ const App: React.FC = () => {
       setIsAirportMode(prev => !prev);
   }
 
-  const handleUpdateTrip = async (tripId: string, updatedData: Partial<Omit<Trip, 'id' | 'createdAt'>>) => {
-    if (!user || !db) return;
-    try {
-        const tripDocRef = doc(db, 'users', user.uid, 'trips', tripId);
-        await updateDoc(tripDocRef, updatedData);
-    } catch (error) {
-        console.error("Error updating trip in Firestore:", error);
-        alert('No se pudo actualizar el viaje. Por favor, intenta de nuevo.');
-    }
-  };
-
-const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
+  const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
     if (!user || !db) throw new Error("Usuario no autenticado.");
-
-    const isAddingOnlyDeparture = newTripData.departureFlight && !newTripData.returnFlight;
-    const isAddingOnlyReturn = !newTripData.departureFlight && !newTripData.returnFlight;
-
-    // Si es un viaje completo o vacío, simplemente se crea un nuevo documento.
-    if (!isAddingOnlyDeparture && !isAddingOnlyReturn) {
-        try {
-            const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
-            await addDoc(tripsCollectionRef, { ...newTripData, createdAt: new Date().toISOString() });
-            setIsModalOpen(false);
-            setIsQuickAddModalOpen(false);
-        } catch (error) {
-            console.error("Error adding full trip to Firestore:", error);
-            throw new Error('No se pudo guardar el viaje en la base de datos.');
-        }
-        return;
-    }
-    
-    const MAX_DAYS_BETWEEN_FLIGHTS = 10;
-    const MAX_TIME_MS = MAX_DAYS_BETWEEN_FLIGHTS * 24 * 60 * 60 * 1000;
-
-    // Lógica para agregar un vuelo de IDA y buscar una VUELTA
-    if (isAddingOnlyDeparture) {
-        const newDeparture = newTripData.departureFlight!;
-        const newDepartureArrival = new Date(newDeparture.arrivalDateTime!).getTime();
-
-        const potentialMatches = trips.filter(t => t.returnFlight && !t.departureFlight);
-        
-        let bestMatch: Trip | null = null;
-        let smallestTimeDiff = Infinity;
-
-        for (const existingTrip of potentialMatches) {
-            const existingReturn = existingTrip.returnFlight!;
-            const existingReturnDeparture = new Date(existingReturn.departureDateTime!).getTime();
-            const timeDiff = existingReturnDeparture - newDepartureArrival;
-
-            if (timeDiff > 0 && timeDiff < MAX_TIME_MS && timeDiff < smallestTimeDiff) {
-                bestMatch = existingTrip;
-                smallestTimeDiff = timeDiff;
-            }
-        }
-
-        if (bestMatch) {
-            await handleUpdateTrip(bestMatch.id, { departureFlight: newDeparture });
-            setIsModalOpen(false);
-            setIsQuickAddModalOpen(false);
-            return;
-        }
-    }
-
-    // Lógica para agregar un vuelo de VUELTA y buscar una IDA
-    if (isAddingOnlyReturn) {
-        const newReturn = newTripData.returnFlight!;
-        const newReturnDeparture = new Date(newReturn.departureDateTime!).getTime();
-
-        const potentialMatches = trips.filter(t => t.departureFlight && !t.returnFlight);
-        
-        let bestMatch: Trip | null = null;
-        let smallestTimeDiff = Infinity;
-
-        for (const existingTrip of potentialMatches) {
-            const existingDeparture = existingTrip.departureFlight!;
-            const existingDepartureArrival = new Date(existingDeparture.arrivalDateTime!).getTime();
-            const timeDiff = newReturnDeparture - existingDepartureArrival;
-
-            if (timeDiff > 0 && timeDiff < MAX_TIME_MS && timeDiff < smallestTimeDiff) {
-                bestMatch = existingTrip;
-                smallestTimeDiff = timeDiff;
-            }
-        }
-
-        if (bestMatch) {
-            await handleUpdateTrip(bestMatch.id, { returnFlight: newReturn });
-            setIsModalOpen(false);
-            setIsQuickAddModalOpen(false);
-            return;
-        }
-    }
-
-    // Si no se encontró un par, se crea un nuevo viaje con un solo tramo.
     try {
         const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
         await addDoc(tripsCollectionRef, { ...newTripData, createdAt: new Date().toISOString() });
         setIsModalOpen(false);
         setIsQuickAddModalOpen(false);
     } catch (error) {
-        console.error("Error adding single-leg trip to Firestore:", error);
+        console.error("Error adding trip to Firestore:", error);
         throw new Error('No se pudo guardar el viaje en la base de datos.');
     }
-};
+  };
 
   const handleDeleteTrip = async (tripId: string) => {
     if (!user || !db) return;
@@ -451,7 +434,7 @@ const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
 
   const handleConfirmGrouping = async (targetTrip: Trip) => {
       const sourceTrip = groupingState.sourceTrip;
-      if (!user || !db || !sourceTrip || !targetTrip || sourceTrip.id === targetTrip.id) {
+      if (!sourceTrip || !targetTrip || sourceTrip.id === targetTrip.id) {
           handleCancelGrouping();
           return;
       }
@@ -459,7 +442,6 @@ const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
       const idaTrip = sourceTrip.departureFlight ? sourceTrip : targetTrip;
       const vueltaTrip = sourceTrip.returnFlight ? sourceTrip : targetTrip;
 
-      // Validation
       if (!idaTrip.departureFlight || !vueltaTrip.returnFlight || idaTrip.returnFlight || vueltaTrip.departureFlight) {
           alert("Selección inválida. Debes seleccionar un viaje de solo ida y uno de solo vuelta para agrupar.");
           handleCancelGrouping();
@@ -473,38 +455,9 @@ const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
       }
 
       try {
-          const updatedData: Partial<Omit<Trip, 'id' | 'createdAt'>> = {
-              departureFlight: idaTrip.departureFlight,
-              returnFlight: vueltaTrip.returnFlight,
-          };
-          
-          if (idaTrip.purchaseDate && vueltaTrip.purchaseDate) {
-              updatedData.purchaseDate = new Date(idaTrip.purchaseDate) < new Date(vueltaTrip.purchaseDate) ? idaTrip.purchaseDate : vueltaTrip.purchaseDate;
-          } else {
-              updatedData.purchaseDate = idaTrip.purchaseDate || vueltaTrip.purchaseDate;
-          }
-
-          const idaTripRef = doc(db, 'users', user.uid, 'trips', idaTrip.id);
-          const vueltaTripRef = doc(db, 'users', user.uid, 'trips', vueltaTrip.id);
-
-          await updateDoc(idaTripRef, updatedData);
-          
-          // Move boarding pass from 'vuelta' trip doc to the merged 'ida' trip doc
-          const vueltaPass = await getBoardingPass(user.uid, vueltaTrip.id, 'vuelta');
-          if (vueltaPass.exists && vueltaPass.file) {
-              await saveBoardingPass(user.uid, idaTrip.id, 'vuelta', vueltaPass.file);
-          }
-          // Move boarding pass from 'ida' trip doc if it was the one being deleted
-           const idaPass = await getBoardingPass(user.uid, idaTrip.id, 'ida');
-          if (idaPass.exists && idaPass.file && sourceTrip.returnFlight) { // if the source was a 'vuelta'
-              await saveBoardingPass(user.uid, vueltaTrip.id, 'ida', idaPass.file);
-          }
-
-
-          await deleteDoc(vueltaTripRef);
-
+          await mergeTrips(idaTrip, vueltaTrip);
       } catch (error) {
-          console.error("Error al agrupar viajes:", error);
+          console.error("Error al agrupar viajes manualmente:", error);
           alert("Ocurrió un error al agrupar los viajes.");
       } finally {
           handleCancelGrouping();
