@@ -322,64 +322,55 @@ const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
 
     const isSingleIda = newTripData.departureFlight && !newTripData.returnFlight;
     const isSingleVuelta = !newTripData.departureFlight && newTripData.returnFlight;
-    const MAX_DAYS_BETWEEN_FLIGHTS = 10;
+    
+    // Using a generous 20-day window to match flights, which covers weekly trips with flexibility.
+    const MAX_DAYS_BETWEEN_FLIGHTS = 20; 
     const MAX_TIME_MS = MAX_DAYS_BETWEEN_FLIGHTS * 24 * 60 * 60 * 1000;
 
-    // Lógica para agregar un vuelo de IDA y buscar una VUELTA existente
+    // The `trips` state is sorted by creation date descending, ensuring we match with the most recent counterpart.
     if (isSingleIda) {
-        const ida = newTripData.departureFlight!;
-        const idaArrivalTime = new Date(ida.arrivalDateTime!).getTime();
-        const potentialMatches = trips.filter(t => t.returnFlight && !t.departureFlight);
+        const newIda = newTripData.departureFlight!;
+        const newIdaArrival = new Date(newIda.arrivalDateTime!).getTime();
         
-        let bestMatch: Trip | null = null;
-        let smallestTimeDiff = MAX_TIME_MS;
+        const matchingTrip = trips.find(trip => {
+            if (!trip.returnFlight || trip.departureFlight) return false;
 
-        for (const match of potentialMatches) {
-            const vueltaDepartureTime = new Date(match.returnFlight!.departureDateTime!).getTime();
-            const timeDiff = vueltaDepartureTime - idaArrivalTime;
+            const existingVueltaDeparture = new Date(trip.returnFlight.departureDateTime!).getTime();
+            const timeDiff = existingVueltaDeparture - newIdaArrival;
+            
+            return timeDiff > 0 && timeDiff < MAX_TIME_MS;
+        });
 
-            if (timeDiff > 0 && timeDiff < smallestTimeDiff) {
-                smallestTimeDiff = timeDiff;
-                bestMatch = match;
-            }
-        }
-        
-        if (bestMatch) {
-            await handleUpdateTrip(bestMatch.id, { departureFlight: ida });
+        if (matchingTrip) {
+            await handleUpdateTrip(matchingTrip.id, { departureFlight: newIda });
             setIsModalOpen(false);
             setIsQuickAddModalOpen(false);
             return;
         }
     }
-    
-    // Lógica para agregar un vuelo de VUELTA y buscar una IDA existente
+
     if (isSingleVuelta) {
-        const vuelta = newTripData.returnFlight!;
-        const vueltaDepartureTime = new Date(vuelta.departureDateTime!).getTime();
-        const potentialMatches = trips.filter(t => t.departureFlight && !t.returnFlight);
+        const newVuelta = newTripData.returnFlight!;
+        const newVueltaDeparture = new Date(newVuelta.departureDateTime!).getTime();
         
-        let bestMatch: Trip | null = null;
-        let smallestTimeDiff = MAX_TIME_MS;
+        const matchingTrip = trips.find(trip => {
+            if (!trip.departureFlight || trip.returnFlight) return false;
 
-        for (const match of potentialMatches) {
-            const idaArrivalTime = new Date(match.departureFlight!.arrivalDateTime!).getTime();
-            const timeDiff = vueltaDepartureTime - idaArrivalTime;
+            const existingIdaArrival = new Date(trip.departureFlight.arrivalDateTime!).getTime();
+            const timeDiff = newVueltaDeparture - existingIdaArrival;
 
-            if (timeDiff > 0 && timeDiff < smallestTimeDiff) {
-                smallestTimeDiff = timeDiff;
-                bestMatch = match;
-            }
-        }
+            return timeDiff > 0 && timeDiff < MAX_TIME_MS;
+        });
 
-        if (bestMatch) {
-            await handleUpdateTrip(bestMatch.id, { returnFlight: vuelta });
+        if (matchingTrip) {
+            await handleUpdateTrip(matchingTrip.id, { returnFlight: newVuelta });
             setIsModalOpen(false);
             setIsQuickAddModalOpen(false);
             return;
         }
     }
 
-    // Si no se encontró ninguna coincidencia, crear un nuevo viaje
+    // If no match was found, create a new trip record.
     try {
       const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
       await addDoc(tripsCollectionRef, {
