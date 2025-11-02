@@ -65,7 +65,6 @@ const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, ne
     );
   }
 
-  const now = new Date();
   let lastYear: number | null = null;
 
   return (
@@ -81,6 +80,7 @@ const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, ne
         }
 
         const tripEndDate = getTripEndDate(trip);
+        const now = new Date();
         const isPast = tripEndDate ? new Date(tripEndDate) < now : false;
         const isNext = trip.id === nextTripId;
 
