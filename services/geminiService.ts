@@ -12,7 +12,7 @@ const flightSchema = {
     arrivalCity: { type: Type.STRING, description: "Ciudad de llegada, ej. 'Buenos Aires'." },
     departureDateTime: { type: Type.STRING, description: "Fecha y hora de salida en formato ISO 8601 'YYYY-MM-DDTHH:mm:ss'." },
     arrivalDateTime: { type: Type.STRING, description: "Fecha y hora de llegada en formato ISO 8601 'YYYY-MM-DDTHH:mm:ss'." },
-    cost: { type: Type.NUMBER, description: "Costo asociado a este vuelo específico. Si el costo es para el viaje completo, asígnalo al primer vuelo." },
+    cost: { type: Type.NUMBER, description: "Costo asociado a este vuelo específico. Si el correo desglosa el costo por tramo, extrae el costo para este vuelo. Si solo se muestra un costo total, asígnalo al primer vuelo de la lista." },
     paymentMethod: { type: Type.STRING, description: "Método de pago para este vuelo, ej. 'Tarjeta de Crédito terminada en 1234'." },
     bookingReference: { type: Type.STRING, description: "Código de reserva o localizador para ESTE VUELO específico." },
   },
@@ -41,8 +41,8 @@ export const parseFlightEmail = async (apiKey: string, emailText: string, pdfBas
   const pdfInstruction = pdfBase64 
     ? `
     DATOS DEL PDF ADJUNTO:
-    - Se ha adjuntado un archivo PDF. Este archivo contiene la información de facturación y el costo total del viaje.
-    - DEBES priorizar el valor encontrado en el PDF como el 'cost' y asignarlo al primer vuelo de la lista.
+    - Se ha adjuntado un archivo PDF. Este archivo puede contener la información de facturación y el costo total del viaje.
+    - DEBES priorizar el valor encontrado en el PDF como el 'cost' si el correo no desglosa los costos por tramo.
     `
     : '';
     
@@ -53,7 +53,7 @@ export const parseFlightEmail = async (apiKey: string, emailText: string, pdfBas
     REGLAS ESTRICTAS E INQUEBRABLES:
     1.  TAREA PRINCIPAL: Extrae CADA VUELO que encuentres en el email y colócalo como un objeto dentro de la lista 'flights' del JSON. Para cada vuelo, DEBES extraer su propio 'bookingReference'.
     2.  REGLA DE ORO: NO INVENTES VUELOS. Si el email contiene solo UN vuelo, la lista 'flights' DEBE contener solo UN objeto. Si el email contiene dos vuelos (ida y vuelta), la lista 'flights' debe contener DOS objetos.
-    3.  COSTO: El costo total del viaje debe ser asignado al campo 'cost' del PRIMER vuelo en la lista 'flights'.
+    3.  COSTO: Busca el costo para CADA VUELO individualmente. Muchos correos desglosan el precio por pasajero o tramo (ej. "Vuelo de ida: $...", "Vuelo de regreso: $..."). Si encuentras este desglose, asigna el costo correspondiente a cada vuelo. Si SOLO se muestra un costo TOTAL para todo el viaje, y no hay desglose, entonces asigna ese costo total al campo 'cost' del PRIMER vuelo en la lista 'flights'.
     4.  FECHA DE COMPRA (purchaseDate): Este campo es CRÍTICO. Debes encontrar la fecha en que se realizó la compra o se emitió la confirmación. Busca atentamente frases como "Fecha de compra:", "Fecha de emisión:", "Emitido el:", o una fecha que esté claramente asociada con la transacción y no con el vuelo en sí (a menudo se encuentra en la parte superior o inferior del correo). Si después de una búsqueda exhaustiva no encuentras una fecha de compra explícita, y solo en ese caso, DEBES usar la fecha de salida del primer vuelo listado como el valor para 'purchaseDate'.
 
     FORMATO DE FECHA:

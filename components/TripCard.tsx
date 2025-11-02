@@ -291,9 +291,13 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
     
     const idaAirline = trip.departureFlight?.airline;
     const vueltaAirline = trip.returnFlight?.airline;
-    const idaRef = trip.departureFlight?.bookingReference;
-    const vueltaRef = trip.returnFlight?.bookingReference;
     
+    // Robust logic for handling booking references
+    const uniqueRefs = [...new Set([
+        trip.departureFlight?.bookingReference,
+        trip.returnFlight?.bookingReference
+    ].filter(ref => ref && ref.trim()))];
+
     const getNormalizedAirline = (name: string | null | undefined): string => {
         if (!name) return '';
         const lowerName = name.toLowerCase();
@@ -420,8 +424,9 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                         <div className="flex items-center justify-end space-x-2">
                             <p className="text-xs font-medium text-slate-600 dark:text-slate-400">{tripTypeText}</p>
                              <div className="flex flex-wrap gap-1 justify-end">
-                                {idaRef && <p className="font-mono bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-md text-xs font-semibold">{idaRef}</p>}
-                                {vueltaRef && idaRef?.trim().toUpperCase() !== vueltaRef?.trim().toUpperCase() && <p className="font-mono bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-md text-xs font-semibold">{vueltaRef}</p>}
+                                {uniqueRefs.map(ref => (
+                                    <p key={ref} className="font-mono bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-md text-xs font-semibold">{ref}</p>
+                                ))}
                             </div>
                             <ChevronDownIcon className={`h-6 w-6 text-slate-500 dark:text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
                         </div>
