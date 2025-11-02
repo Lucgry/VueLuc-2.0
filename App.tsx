@@ -56,6 +56,15 @@ const getTripEndDate = (trip: Trip): Date | null => {
     return dateStr ? new Date(dateStr) : null;
 };
 
+const getFlightFingerprint = (flight: Flight | null): string | null => {
+  if (!flight || !flight.flightNumber || !flight.departureDateTime || !flight.departureAirportCode || !flight.arrivalAirportCode) {
+    return null;
+  }
+  // Un vuelo se identifica de forma única por su número, fecha/hora de salida y ruta.
+  return `${flight.flightNumber.trim().toUpperCase()}-${flight.departureDateTime}-${flight.departureAirportCode}-${flight.arrivalAirportCode}`;
+};
+
+
 const AuthErrorScreen: React.FC<{ error: { links?: { url: string; text: string }[] } }> = ({ error }) => (
     <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">
       <div className="max-w-xl w-full bg-slate-100 dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out">
@@ -188,6 +197,7 @@ const App: React.FC = () => {
   });
   
   const processingRef = useRef(false);
+  const duplicateCleanupRun = useRef(false);
 
   // Authentication effect
   useEffect(() => {
@@ -333,6 +343,87 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [user, authRuntimeError, runAutomaticGrouping]);
 
+  // One-time cleanup for duplicate flights
+  useEffect(() => {
+    if (!user || !db || trips.length === 0 || duplicateCleanupRun.current) {
+        return;
+    }
+
+    const runDuplicateCleanup = async () => {
+        console.log("Iniciando limpieza de vuelos duplicados...");
+        duplicateCleanupRun.current = true; // Mark as run to prevent re-execution
+
+        const seenFingerprints = new Set<string>();
+        const promises: Promise<void>[] = [];
+        let duplicatesFound = 0;
+
+        // Sort trips by creation date to keep the oldest one in case of duplicates
+        const sortedForCleanup = [...trips].sort((a, b) => 
+            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+        );
+
+        for (const trip of sortedForCleanup) {
+            const tripRef = doc(db, 'users', user.uid, 'trips', trip.id);
+            let isModified = false;
+            const updates: { departureFlight: Flight | null; returnFlight: Flight | null } = {
+                departureFlight: trip.departureFlight,
+                returnFlight: trip.returnFlight,
+            };
+
+            // Check departure flight
+            if (updates.departureFlight) {
+                const fingerprint = getFlightFingerprint(updates.departureFlight);
+                if (fingerprint && seenFingerprints.has(fingerprint)) {
+                    updates.departureFlight = null;
+                    isModified = true;
+                    duplicatesFound++;
+                    console.log(`Duplicado encontrado (IDA): Vuelo ${fingerprint} en viaje ${trip.id}`);
+                } else if (fingerprint) {
+                    seenFingerprints.add(fingerprint);
+                }
+            }
+
+            // Check return flight
+            if (updates.returnFlight) {
+                const fingerprint = getFlightFingerprint(updates.returnFlight);
+                if (fingerprint && seenFingerprints.has(fingerprint)) {
+                    updates.returnFlight = null;
+                    isModified = true;
+                    duplicatesFound++;
+                    console.log(`Duplicado encontrado (VUELTA): Vuelo ${fingerprint} en viaje ${trip.id}`);
+                } else if (fingerprint) {
+                    seenFingerprints.add(fingerprint);
+                }
+            }
+
+            // Decide action: delete, update, or do nothing
+            if (isModified) {
+                if (!updates.departureFlight && !updates.returnFlight) {
+                    // Both flights were duplicates, delete the whole trip doc
+                    promises.push(deleteDoc(tripRef));
+                    console.log(`Viaje ${trip.id} marcado para eliminación completa.`);
+                } else {
+                    // One flight was a duplicate, update the trip doc
+                    promises.push(updateDoc(tripRef, updates));
+                    console.log(`Viaje ${trip.id} marcado para actualización.`);
+                }
+            }
+        }
+        
+        if (promises.length > 0) {
+            await Promise.all(promises);
+            console.log(`Limpieza completada. Se procesaron ${promises.length} operaciones de escritura/eliminación.`);
+            alert(`Se han eliminado ${duplicatesFound} vuelos duplicados que se encontraron en tus registros.`);
+        } else {
+             console.log("No se encontraron duplicados durante la limpieza.");
+        }
+    };
+    
+    runDuplicateCleanup();
+
+  }, [trips, user, db]);
+
+
   useEffect(() => {
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault(); 
@@ -383,6 +474,33 @@ const App: React.FC = () => {
 
   const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
     if (!user || !db) throw new Error("Usuario no autenticado.");
+
+    // --- Verificación de duplicados ---
+    const depFingerprint = getFlightFingerprint(newTripData.departureFlight);
+    const retFingerprint = getFlightFingerprint(newTripData.returnFlight);
+
+    const existingFingerprints = new Set<string>();
+    trips.forEach(trip => {
+        const existingDep = getFlightFingerprint(trip.departureFlight);
+        const existingRet = getFlightFingerprint(trip.returnFlight);
+        if (existingDep) existingFingerprints.add(existingDep);
+        if (existingRet) existingFingerprints.add(existingRet);
+    });
+
+    if (depFingerprint && existingFingerprints.has(depFingerprint)) {
+        alert(`El vuelo de ida (${newTripData.departureFlight?.flightNumber}) ya existe. No se agregará.`);
+        setIsModalOpen(false);
+        setIsQuickAddModalOpen(false);
+        return;
+    }
+    if (retFingerprint && existingFingerprints.has(retFingerprint)) {
+        alert(`El vuelo de vuelta (${newTripData.returnFlight?.flightNumber}) ya existe. No se agregará.`);
+        setIsModalOpen(false);
+        setIsQuickAddModalOpen(false);
+        return;
+    }
+    // --- Fin de la verificación ---
+
     try {
         const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
         await addDoc(tripsCollectionRef, { ...newTripData, createdAt: new Date().toISOString() });
