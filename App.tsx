@@ -320,33 +320,29 @@ const App: React.FC = () => {
   const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
     if (!user || !db) throw new Error("Usuario no autenticado.");
 
-    // --- LOGICA DE AGRUPACIÓN POR FECHAS (APLICA A TODOS LOS VIAJES, INCLUIDOS LOS COMPLETADOS) ---
     const isSingleIda = newTripData.departureFlight && !newTripData.returnFlight;
     const isSingleVuelta = !newTripData.departureFlight && newTripData.returnFlight;
+    const MAX_DAYS_BETWEEN_FLIGHTS = 10;
+    const MAX_TIME_MS = MAX_DAYS_BETWEEN_FLIGHTS * 24 * 60 * 60 * 1000;
 
-    // Búsqueda de vuelta complementaria para una ida.
-    // La búsqueda se realiza sobre todos los viajes existentes, sin importar si son pasados o futuros.
     if (isSingleIda) {
         const ida = newTripData.departureFlight!;
         const idaArrivalTime = new Date(ida.arrivalDateTime!).getTime();
-
-        // Filtra para encontrar viajes que solo tengan un vuelo de vuelta y estén "esperando" una ida.
         const potentialMatches = trips.filter(t => t.returnFlight && !t.departureFlight);
-        
+
         if (potentialMatches.length > 0) {
-            // Ordena los candidatos para encontrar el más próximo en el tiempo.
             potentialMatches.sort((a, b) => 
                 new Date(a.returnFlight!.departureDateTime!).getTime() - 
                 new Date(b.returnFlight!.departureDateTime!).getTime()
             );
-
-            // Encuentra el primer vuelo de vuelta que sea cronológicamente posterior a la llegada de la ida.
-            const bestMatch = potentialMatches.find(t => 
-                new Date(t.returnFlight!.departureDateTime!).getTime() > idaArrivalTime
-            );
+            
+            const bestMatch = potentialMatches.find(t => {
+                const vueltaDepartureTime = new Date(t.returnFlight!.departureDateTime!).getTime();
+                const timeDiff = vueltaDepartureTime - idaArrivalTime;
+                return timeDiff > 0 && timeDiff < MAX_TIME_MS;
+            });
 
             if (bestMatch) {
-                // Si se encuentra una pareja, se actualiza el viaje existente en lugar de crear uno nuevo.
                 await handleUpdateTrip(bestMatch.id, { departureFlight: ida });
                 setIsModalOpen(false);
                 setIsQuickAddModalOpen(false);
@@ -355,23 +351,19 @@ const App: React.FC = () => {
         }
     }
     
-    // Búsqueda de ida complementaria para una vuelta.
-    // La búsqueda también se realiza sobre todos los viajes, incluyendo los ya completados.
     if (isSingleVuelta) {
         const vuelta = newTripData.returnFlight!;
         const vueltaDepartureTime = new Date(vuelta.departureDateTime!).getTime();
-
-        // Filtra para encontrar viajes que solo tengan un vuelo de ida.
         const potentialMatches = trips.filter(t => t.departureFlight && !t.returnFlight);
         
         if (potentialMatches.length > 0) {
-            // De los candidatos, nos interesan los que ocurrieron ANTES de la vuelta.
-            const pastIdaFlights = potentialMatches.filter(t => 
-                new Date(t.departureFlight!.departureDateTime!).getTime() < vueltaDepartureTime
-            );
+            const pastIdaFlights = potentialMatches.filter(t => {
+                const idaDepartureTime = new Date(t.departureFlight!.departureDateTime!).getTime();
+                const timeDiff = vueltaDepartureTime - idaDepartureTime;
+                return timeDiff > 0 && timeDiff < MAX_TIME_MS;
+            });
 
             if (pastIdaFlights.length > 0) {
-                // Ordena para encontrar la ida más reciente que aún no tiene una vuelta asignada.
                 pastIdaFlights.sort((a, b) => 
                     new Date(b.departureFlight!.departureDateTime!).getTime() - 
                     new Date(a.departureFlight!.departureDateTime!).getTime()
@@ -379,7 +371,6 @@ const App: React.FC = () => {
                 
                 const bestMatch = pastIdaFlights[0];
                 
-                // Actualiza el viaje de ida existente con su correspondiente vuelo de vuelta.
                 await handleUpdateTrip(bestMatch.id, { returnFlight: vuelta });
                 setIsModalOpen(false);
                 setIsQuickAddModalOpen(false);
@@ -387,9 +378,7 @@ const App: React.FC = () => {
             }
         }
     }
-    // --- FIN DE LOGICA DE AGRUPACIÓN ---
 
-    // Si no se encontró ninguna pareja, se agrega el tramo como un nuevo viaje.
     try {
       const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
       await addDoc(tripsCollectionRef, {
