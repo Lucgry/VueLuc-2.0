@@ -12,7 +12,7 @@ export default defineConfig({
   preview: {
     host: '0.0.0.0',
     port: 8080,
-    allowedHosts: ['vueluc-app.web.app', 'vueluc-app.firebaseapp.com', 'vueluc-2.netlify.app']
+    allowedHosts: ['vueluc-app.web.app', 'vueluc-app.firebaseapp.com', 'vueluc-2.netlify.app', '.run.app']
   },
   build: {
     outDir: 'dist',

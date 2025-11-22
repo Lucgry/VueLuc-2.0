@@ -60,6 +60,7 @@ const formatPaymentMethod = (paymentMethod: string | null): string => {
   if (paymentMethod.includes('5603')) return 'Crédito Macro';
   if (paymentMethod.includes('8769')) return 'Crédito Ciudad';
   if (paymentMethod.includes('8059')) return 'Crédito Yoy';
+  if (paymentMethod.includes('7005')) return 'Débito Nación';
   
   return paymentMethod;
 };

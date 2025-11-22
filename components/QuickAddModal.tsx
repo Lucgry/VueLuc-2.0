@@ -56,7 +56,7 @@ const initialVueltaData: FlightData = {
     cost: '', paymentMethod: 'Débito Macro'
 };
 
-const paymentOptions = ['Débito Macro', 'Débito Ciudad', 'Crédito Macro', 'Crédito Ciudad', 'Crédito Yoy'];
+const paymentOptions = ['Débito Macro', 'Débito Ciudad', 'Crédito Macro', 'Crédito Ciudad', 'Crédito Yoy', 'Débito Nación'];
 const inputClasses = "w-full p-2 border-none rounded-md bg-slate-100 dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 transition shadow-neumo-light-in dark:shadow-neumo-dark-in";
 
 const FlightFieldSet: React.FC<{
