@@ -10,6 +10,7 @@ import { BriefcaseIcon } from './icons/BriefcaseIcon';
 interface TripListProps {
   trips: Trip[];
   onDeleteTrip: (tripId: string) => void;
+  onSplitTrip: (trip: Trip) => void;
   listFilter: 'all' | 'future' | 'currentMonth' | 'completed';
   nextTripId: string | null;
   userId: string;
@@ -56,7 +57,7 @@ const YearSeparator: React.FC<{ year: number }> = ({ year }) => (
   </div>
 );
 
-const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, nextTripId, userId, groupingState, onStartGrouping, onConfirmGrouping }) => {
+const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, onSplitTrip, listFilter, nextTripId, userId, groupingState, onStartGrouping, onConfirmGrouping }) => {
   if (trips.length === 0 && !groupingState.active) {
     const { title, message, icon } = emptyMessages[listFilter] || emptyMessages.future;
     return (
@@ -93,6 +94,7 @@ const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, listFilter, ne
             <TripCard 
               trip={trip} 
               onDelete={() => onDeleteTrip(trip.id)}
+              onSplit={() => onSplitTrip(trip)}
               isPast={isPast}
               isNext={isNext}
               userId={userId}

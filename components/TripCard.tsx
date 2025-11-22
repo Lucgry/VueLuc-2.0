@@ -12,6 +12,7 @@ import { DocumentPlusIcon } from './icons/DocumentPlusIcon';
 import { DocumentTextIcon } from './icons/DocumentTextIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { Spinner } from './Spinner';
+import { LinkSlashIcon } from './icons/LinkSlashIcon';
 
 const LinkIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -20,7 +21,7 @@ const LinkIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 );
 
 const TicketIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-1.5h5.25m-5.25 0h5.25m-5.25-2.25h5.25m-5.25 2.25h5.25M9 7.5a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5A.75.75 0 0 1 9 7.5Zm-5.25 9a.75.75 0 0 1 .75-.75h13.5a.75.75 0 0 1 0 1.5H4.5a.75.75 0 0 1-.75-.75Z" />
   </svg>
 );
@@ -115,6 +116,7 @@ const FlightInfo: React.FC<{ flight: Flight; type: 'Ida' | 'Vuelta' }> = ({ flig
 interface TripCardProps {
   trip: Trip;
   onDelete: () => void;
+  onSplit: () => void;
   isPast: boolean;
   isNext: boolean;
   userId: string;
@@ -125,7 +127,7 @@ interface TripCardProps {
 
 type DeletionState = 'idle' | 'confirming' | 'deleting';
 
-const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, userId, groupingState, onStartGrouping, onConfirmGrouping }) => {
+const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, onSplit, isPast, isNext, userId, groupingState, onStartGrouping, onConfirmGrouping }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [copied, setCopied] = useState(false);
     const [passStatus, setPassStatus] = useState<{ ida: boolean | 'loading', vuelta: boolean | 'loading' }>({ ida: 'loading', vuelta: 'loading' });
@@ -522,19 +524,29 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                                 </div>
                            ) : (
                             <>
-                             <button onClick={(e) => handleShare(e)} className="text-slate-600 dark:text-slate-300 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-700/50 dark:hover:bg-slate-700">
+                             <button onClick={(e) => handleShare(e)} className="text-slate-600 dark:text-slate-300 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-700/50 dark:hover:bg-slate-700" title="Compartir">
                                  <ShareIcon className="h-4 w-4" />
-                                 <span>{copied ? '¡Copiado!' : 'Compartir'}</span>
+                                 <span className="hidden sm:inline">{copied ? '¡Copiado!' : 'Compartir'}</span>
                             </button>
-                            {isOneWay && !groupingState.active && (
-                                <button onClick={(e) => { e.stopPropagation(); onStartGrouping(trip); }} className="text-slate-600 dark:text-slate-300 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-700/50 dark:hover:bg-slate-700">
-                                    <LinkIcon className="h-4 w-4" />
-                                    <span>Agrupar</span>
+
+                            {/* START SPLIT BUTTON */}
+                            {!groupingState.active && idaFlight && vueltaFlight && (
+                                <button onClick={(e) => { e.stopPropagation(); onSplit(); }} className="text-slate-600 dark:text-slate-300 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-700/50 dark:hover:bg-slate-700" title="Desagrupar / Separar viajes">
+                                    <LinkSlashIcon className="h-4 w-4" />
+                                    <span className="hidden sm:inline">Desagrupar</span>
                                 </button>
                             )}
-                            <button onClick={(e) => { e.stopPropagation(); setTripDeletionState('confirming'); }} className="text-slate-600 dark:text-slate-300 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-700/50 dark:hover:bg-slate-700">
+                            {/* END SPLIT BUTTON */}
+
+                            {isOneWay && !groupingState.active && (
+                                <button onClick={(e) => { e.stopPropagation(); onStartGrouping(trip); }} className="text-slate-600 dark:text-slate-300 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-700/50 dark:hover:bg-slate-700" title="Agrupar con otro tramo">
+                                    <LinkIcon className="h-4 w-4" />
+                                    <span className="hidden sm:inline">Agrupar</span>
+                                </button>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); setTripDeletionState('confirming'); }} className="text-slate-600 dark:text-slate-300 p-2 rounded-lg transition text-sm flex items-center space-x-2 font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-700/50 dark:hover:bg-slate-700" title="Eliminar">
                                  <TrashIcon className="h-4 w-4" />
-                                 <span>Eliminar</span>
+                                 <span className="hidden sm:inline">Eliminar</span>
                             </button>
                             </>
                            )}

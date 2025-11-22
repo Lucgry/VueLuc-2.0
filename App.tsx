@@ -14,7 +14,7 @@ import InstallBanner from './components/InstallBanner';
 import QuickAddModal from './components/QuickAddModal';
 import { PencilSquareIcon } from './components/icons/PencilSquareIcon';
 import { MailIcon } from './components/icons/MailIcon';
-import { deleteBoardingPassesForTrip, getBoardingPass, saveBoardingPass, deleteBoardingPass } from './services/db';
+import { deleteBoardingPassesForTrip, getBoardingPass, saveBoardingPass, deleteBoardingPass, moveBoardingPass } from './services/db';
 import AirportModeView from './components/AirportModeView';
 import ApiKeySetup from './components/ApiKeySetup';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -274,6 +274,45 @@ const App: React.FC = () => {
       console.error("Error al fusionar viajes:", error);
       throw new Error("Ocurrió un error al fusionar los viajes.");
     }
+  }, [user]);
+  
+  const handleSplitTrip = useCallback(async (trip: Trip) => {
+      if (!user || !db) return;
+      if (!trip.departureFlight || !trip.returnFlight) {
+          alert("Este viaje no se puede desagrupar porque no tiene ambos tramos (Ida y Vuelta).");
+          return;
+      }
+      
+      const confirmed = window.confirm("¿Deseas separar este viaje en dos tarjetas individuales? (Ida y Vuelta se separarán)");
+      if (!confirmed) return;
+
+      try {
+          // 1. Create new trip for the return flight (Vuelta)
+          const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
+          // Use the same creation date or a new one? Keeping same might be less confusing for sort.
+          // Actually, for logic, let's use current date to avoid it getting buried, or keep original.
+          // Let's use the same createdAt to keep them relatively close in history if sorted by created.
+          const newVueltaTripRef = await addDoc(tripsCollectionRef, {
+              departureFlight: null,
+              returnFlight: trip.returnFlight,
+              purchaseDate: trip.purchaseDate, // Copy purchase date
+              createdAt: trip.createdAt 
+          });
+          
+          // 2. Move Boarding Pass if it exists (Vuelta pass on old trip -> Vuelta pass on new trip)
+          await moveBoardingPass(user.uid, trip.id, newVueltaTripRef.id, 'vuelta');
+
+          // 3. Update original trip to remove return flight
+          const originalTripRef = doc(db, 'users', user.uid, 'trips', trip.id);
+          await updateDoc(originalTripRef, {
+              returnFlight: null
+          });
+          
+      } catch (error) {
+          console.error("Error splitting trip:", error);
+          alert("Ocurrió un error al separar el viaje.");
+      }
+
   }, [user]);
 
   const runAutomaticGrouping = useCallback(async (currentTrips: Trip[]) => {
@@ -789,7 +828,7 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripId} userId={user.uid} groupingState={groupingState} onStartGrouping={handleStartGrouping} onConfirmGrouping={handleConfirmGrouping} />}
+                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} onSplitTrip={handleSplitTrip} listFilter={listFilter} nextTripId={nextTripId} userId={user.uid} groupingState={groupingState} onStartGrouping={handleStartGrouping} onConfirmGrouping={handleConfirmGrouping} />}
                 {view === 'calendar' && <CalendarView trips={trips} />}
                 {view === 'costs' && <CostSummary trips={trips} />}
 

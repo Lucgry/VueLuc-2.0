@@ -71,3 +71,24 @@ export const deleteBoardingPassesForTrip = async (userId: string, tripId: string
         console.error("Error eliminando una de las tarjetas de embarque:", error);
     });
 };
+
+export const moveBoardingPass = async (userId: string, oldTripId: string, newTripId: string, flightType: 'ida' | 'vuelta'): Promise<void> => {
+     if (!userId) throw new Error("Usuario no autenticado.");
+     
+     try {
+         // 1. Verificar y descargar el archivo antiguo
+         const { file, exists } = await getBoardingPass(userId, oldTripId, flightType);
+         
+         if (exists && file) {
+             // 2. Subir al nuevo path
+             await saveBoardingPass(userId, newTripId, flightType, file);
+             
+             // 3. Eliminar el antiguo
+             await deleteBoardingPass(userId, oldTripId, flightType);
+         }
+     } catch (error) {
+         console.error(`Error moviendo tarjeta de embarque de ${oldTripId} a ${newTripId}:`, error);
+         // No lanzamos error crítico para no detener la separación del viaje, 
+         // pero idealmente el usuario debería saberlo.
+     }
+};
