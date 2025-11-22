@@ -72,6 +72,14 @@
         animation: glow 2.5s ease-in-out infinite;
         border-radius: 0.75rem; /* Asegura que el brillo siga la forma de la tarjeta */
       }
+      /* Utility to hide scrollbar for horizontal scrolling elements */
+      .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+      }
+      .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+      }
     </style>
 <script type="importmap">
 {

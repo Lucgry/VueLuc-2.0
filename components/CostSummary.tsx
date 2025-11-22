@@ -10,14 +10,17 @@ interface CostSummaryProps {
   trips: Trip[];
 }
 
+// Optimized StatCard for mobile:
+// - Uses flex-col on small screens to stack Icon + Label + Value vertically, ensuring value has full width.
+// - Uses flex-row on larger screens (sm) for the classic side-by-side look.
 const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string; gradient: string }> = ({ icon, label, value, gradient }) => (
-    <div className="p-3 rounded-xl flex items-center space-x-2 sm:space-x-3 bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 min-w-0">
-        <div className={`p-2 rounded-full ${gradient} text-white shadow-md flex-shrink-0`}>
+    <div className="p-3 rounded-xl flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-3 bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 min-w-0">
+        <div className={`p-2 rounded-full ${gradient} text-white shadow-md flex-shrink-0 self-start sm:self-center`}>
            {icon}
         </div>
-        <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate uppercase tracking-wide">{label}</p>
-            <p className="text-base sm:text-2xl font-bold text-slate-900 dark:text-white truncate tracking-tight" title={value}>{value}</p>
+        <div className="min-w-0 flex-1 w-full">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate uppercase tracking-wide mb-0.5">{label}</p>
+            <p className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 dark:text-white truncate tracking-tight w-full" title={value}>{value}</p>
         </div>
     </div>
 );
@@ -197,7 +200,8 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                     {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
                 </select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            {/* Grid layout with small gap to maximize horizontal space */}
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
                 <StatCard 
                     icon={<BriefcaseIcon className="h-5 w-5 sm:h-6 sm:w-6" />}
                     label="Viajes"

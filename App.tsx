@@ -744,8 +744,9 @@ const App: React.FC = () => {
                     <NextTripCard flight={nextTripInfo.flight} flightType={nextTripInfo.flightType} />
                 )}
 
+                {/* --- SEGMENTED CONTROL (VIEW SWITCHER) --- */}
                 <div className="mb-4">
-                    <div className="bg-slate-200/70 dark:bg-slate-800/50 backdrop-blur-md border border-slate-300/80 dark:border-slate-700/50 p-1 rounded-full flex items-center justify-center space-x-1 max-w-sm mx-auto">
+                    <div className="bg-slate-200 dark:bg-slate-800 p-1 rounded-xl grid grid-cols-3 gap-1 shadow-inner">
                         {([
                             { viewName: 'list', Icon: ListBulletIcon, label: 'Lista' },
                             { viewName: 'calendar', Icon: CalendarDaysIcon, label: 'Calendario' },
@@ -754,30 +755,37 @@ const App: React.FC = () => {
                             <button
                                 key={viewName}
                                 onClick={() => setView(viewName)}
-                                className={`w-full px-3 py-2 text-sm font-semibold rounded-full flex items-center justify-center space-x-2 transition-all duration-300 ${view === viewName ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'}`}
+                                className={`w-full py-2 text-sm font-semibold rounded-lg flex items-center justify-center space-x-1.5 transition-all duration-200 ${
+                                    view === viewName 
+                                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm ring-1 ring-slate-200 dark:ring-slate-600' 
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                }`}
                                 aria-pressed={view === viewName}
                             >
-                                <Icon className="h-5 w-5" />
+                                <Icon className="h-4 w-4" />
                                 <span>{label}</span>
                             </button>
                         ))}
                     </div>
                 </div>
 
+                {/* --- CHIPS (FILTER SWITCHER) --- */}
                 {view === 'list' && (
-                    <div className="mb-6 flex justify-center">
-                        <div className="bg-slate-200/70 dark:bg-slate-800/50 backdrop-blur-md border border-slate-300/80 dark:border-slate-700/50 p-1 rounded-full flex items-center space-x-1 overflow-x-auto max-w-full">
-                             {filterOptions.map(opt => (
-                                <button
-                                    key={opt.key}
-                                    onClick={() => setListFilter(opt.key)}
-                                    className={`px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-300 whitespace-nowrap ${listFilter === opt.key ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'}`}
-                                    aria-pressed={listFilter === opt.key}
-                                >
-                                    {opt.label}
-                                </button>
-                             ))}
-                        </div>
+                    <div className="mb-6 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 flex justify-start sm:justify-center space-x-2">
+                        {filterOptions.map(opt => (
+                        <button
+                            key={opt.key}
+                            onClick={() => setListFilter(opt.key)}
+                            className={`flex-shrink-0 px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 border ${
+                                listFilter === opt.key 
+                                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-transparent shadow-md' 
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                            }`}
+                            aria-pressed={listFilter === opt.key}
+                        >
+                            {opt.label}
+                        </button>
+                        ))}
                     </div>
                 )}
 
