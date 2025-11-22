@@ -292,7 +292,7 @@ const App: React.FC = () => {
           return dateA.getTime() - dateB.getTime();
       });
 
-      const unpairedLegs = sortedLegs.map(trip => ({ trip, paired: false }));
+      const unpairedLegs: { trip: Trip; paired: boolean }[] = sortedLegs.map(trip => ({ trip, paired: false }));
 
       for (let i = 0; i < unpairedLegs.length; i++) {
           if (unpairedLegs[i].paired) continue;
@@ -584,7 +584,7 @@ const App: React.FC = () => {
   };
 
 
-  const sortedTrips = useMemo(() => {
+  const sortedTrips: Trip[] = useMemo(() => {
       return [...trips].sort((a, b) => {
           const dateA = getTripStartDate(a);
           const dateB = getTripStartDate(b);
@@ -594,7 +594,7 @@ const App: React.FC = () => {
       });
   }, [trips]);
   
-  const filteredTrips = useMemo(() => {
+  const filteredTrips: Trip[] = useMemo(() => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
@@ -621,7 +621,7 @@ const App: React.FC = () => {
     }
   }, [sortedTrips, listFilter]);
   
-  const nextTripInfo = useMemo(() => {
+  const nextTripInfo = useMemo<{ trip: Trip; flight: Flight; flightType: 'ida' | 'vuelta' } | null>(() => {
     const now = new Date();
     const futureTrips = sortedTrips
       .map(trip => {
@@ -774,7 +774,7 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripInfo?.trip?.id ?? null} userId={user.uid} groupingState={groupingState} onStartGrouping={handleStartGrouping} onConfirmGrouping={handleConfirmGrouping} />}
+                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripInfo ? nextTripInfo.trip.id : null} userId={user.uid} groupingState={groupingState} onStartGrouping={handleStartGrouping} onConfirmGrouping={handleConfirmGrouping} />}
                 {view === 'calendar' && <CalendarView trips={trips} />}
                 {view === 'costs' && <CostSummary trips={trips} />}
 
