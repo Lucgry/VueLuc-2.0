@@ -87,7 +87,7 @@ export const parseFlightEmail = async (apiKey: string, emailText: string, pdfBas
       },
     });
 
-    const parsedText = response.text.trim();
+    const parsedText = (response.text || "").trim();
     
     type GeminiResponse = {
       flights: Flight[];

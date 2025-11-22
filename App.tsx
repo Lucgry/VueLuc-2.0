@@ -363,7 +363,8 @@ const App: React.FC = () => {
         );
 
         for (const trip of sortedForCleanup) {
-            const tripRef = doc(db, 'users', user.uid, 'trips', trip.id);
+            // Force non-null assertion because we checked !db at the start of useEffect
+            const tripRef = doc(db!, 'users', user.uid, 'trips', trip.id);
             let isModified = false;
             const updates: { departureFlight: Flight | null; returnFlight: Flight | null } = {
                 departureFlight: trip.departureFlight,
@@ -773,7 +774,7 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripInfo?.trip.id ?? null} userId={user.uid} groupingState={groupingState} onStartGrouping={handleStartGrouping} onConfirmGrouping={handleConfirmGrouping} />}
+                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripInfo?.trip?.id ?? null} userId={user.uid} groupingState={groupingState} onStartGrouping={handleStartGrouping} onConfirmGrouping={handleConfirmGrouping} />}
                 {view === 'calendar' && <CalendarView trips={trips} />}
                 {view === 'costs' && <CostSummary trips={trips} />}
 

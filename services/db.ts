@@ -5,6 +5,7 @@ import type { FirebaseError } from 'firebase/app';
 // La inicialización de la base de datos ya no es necesaria, Firebase se encarga de ello.
 
 const getFileRef = (userId: string, tripId: string, flightType: 'ida' | 'vuelta') => {
+    if (!storage) throw new Error("Firebase Storage no está inicializado.");
     return ref(storage, `boarding-passes/${userId}/${tripId}-${flightType}`);
 };
 

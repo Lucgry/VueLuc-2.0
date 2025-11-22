@@ -83,25 +83,25 @@ const FlightInfo: React.FC<{ flight: Flight; type: 'Ida' | 'Vuelta' }> = ({ flig
       </div>
       
       <div className="text-center text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2 capitalize">
-        {formatDate(flight.departureDateTime)}
+        {formatDate(flight.departureDateTime ?? null)}
       </div>
 
       <div className="flex items-center justify-between space-x-2">
         <div className="text-center">
-          <p className="text-2xl font-bold">{formatTime(flight.departureDateTime)}</p>
+          <p className="text-2xl font-bold">{formatTime(flight.departureDateTime ?? null)}</p>
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">{flight.departureAirportCode}</p>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center">
              <div className="w-full h-px bg-slate-300 dark:bg-slate-700/50"></div>
              <div className="text-center -mt-4">
                 <div className="p-1 rounded-full bg-slate-100/50 dark:bg-slate-900/50">
-                    <AirlineLogo airline={flight.airline} size="sm" type="isotipo" />
+                    <AirlineLogo airline={flight.airline ?? null} size="sm" type="isotipo" />
                 </div>
                 {flight.flightNumber && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{flight.flightNumber}</p>}
              </div>
         </div>
         <div className="text-center">
-          <p className="text-2xl font-bold">{formatTime(flight.arrivalDateTime)}</p>
+          <p className="text-2xl font-bold">{formatTime(flight.arrivalDateTime ?? null)}</p>
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">{flight.arrivalAirportCode}</p>
         </div>
       </div>
@@ -299,12 +299,12 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
 
     const status = getStatus();
     
-    const idaDate = idaFlight?.departureDateTime;
-    const vueltaDate = vueltaFlight?.departureDateTime;
+    const idaDate = idaFlight?.departureDateTime ?? null;
+    const vueltaDate = vueltaFlight?.departureDateTime ?? null;
     const tripDate = idaDate || vueltaDate;
     
-    const idaAirline = trip.departureFlight?.airline;
-    const vueltaAirline = trip.returnFlight?.airline;
+    const idaAirline = trip.departureFlight?.airline ?? null;
+    const vueltaAirline = trip.returnFlight?.airline ?? null;
 
     const getNormalizedAirline = (name: string | null | undefined): string => {
         if (!name) return '';
@@ -335,17 +335,17 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
         if (departureFlight) {
             text += `🛫 IDA (Reserva: ${departureFlight.bookingReference || 'N/A'}):\n`;
             text += `${departureFlight.airline || ''} (Vuelo ${departureFlight.flightNumber || ''})\n`;
-            text += `🗓️ ${formatDate(departureFlight.departureDateTime)}\n`;
-            text += `Sale ${departureFlight.departureCity} (${departureFlight.departureAirportCode}) a las ${formatTime(departureFlight.departureDateTime)} hs\n`;
-            text += `Llega ${departureFlight.arrivalCity} (${departureFlight.arrivalAirportCode}) a las ${formatTime(departureFlight.arrivalDateTime)} hs\n\n`;
+            text += `🗓️ ${formatDate(departureFlight.departureDateTime ?? null)}\n`;
+            text += `Sale ${departureFlight.departureCity} (${departureFlight.departureAirportCode}) a las ${formatTime(departureFlight.departureDateTime ?? null)} hs\n`;
+            text += `Llega ${departureFlight.arrivalCity} (${departureFlight.arrivalAirportCode}) a las ${formatTime(departureFlight.arrivalDateTime ?? null)} hs\n\n`;
         }
 
         if (returnFlight) {
             text += `🛬 VUELTA (Reserva: ${returnFlight.bookingReference || 'N/A'}):\n`;
             text += `${returnFlight.airline || ''} (Vuelo ${returnFlight.flightNumber || ''})\n`;
-            text += `🗓️ ${formatDate(returnFlight.departureDateTime)}\n`;
-            text += `Sale ${returnFlight.departureCity} (${returnFlight.departureAirportCode}) a las ${formatTime(returnFlight.departureDateTime)} hs\n`;
-            text += `Llega ${returnFlight.arrivalCity} (${returnFlight.arrivalAirportCode}) a las ${formatTime(returnFlight.arrivalDateTime)} hs\n`;
+            text += `🗓️ ${formatDate(returnFlight.departureDateTime ?? null)}\n`;
+            text += `Sale ${returnFlight.departureCity} (${returnFlight.departureAirportCode}) a las ${formatTime(returnFlight.departureDateTime ?? null)} hs\n`;
+            text += `Llega ${returnFlight.arrivalCity} (${returnFlight.arrivalAirportCode}) a las ${formatTime(returnFlight.arrivalDateTime ?? null)} hs\n`;
         }
         
         return text.trim();
@@ -507,10 +507,10 @@ const TripCard: React.FC<TripCardProps> = ({ trip, onDelete, isPast, isNext, use
                     <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                         <div className="text-sm space-y-1 text-slate-700 dark:text-slate-300 w-full sm:w-auto">
                            {idaFlight?.cost != null && (
-                                <p><strong>Costo Ida:</strong> ${idaFlight.cost.toLocaleString('es-AR')} ({formatPaymentMethod(idaFlight.paymentMethod)})</p>
+                                <p><strong>Costo Ida:</strong> ${idaFlight.cost.toLocaleString('es-AR')} ({formatPaymentMethod(idaFlight.paymentMethod ?? null)})</p>
                            )}
                            {vueltaFlight?.cost != null && (
-                                <p><strong>Costo Vuelta:</strong> ${vueltaFlight.cost.toLocaleString('es-AR')} ({formatPaymentMethod(vueltaFlight.paymentMethod)})</p>
+                                <p><strong>Costo Vuelta:</strong> ${vueltaFlight.cost.toLocaleString('es-AR')} ({formatPaymentMethod(vueltaFlight.paymentMethod ?? null)})</p>
                            )}
                         </div>
                         <div className="flex items-center space-x-2 w-full justify-end sm:w-auto">
