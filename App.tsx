@@ -283,8 +283,9 @@ const App: React.FC = () => {
       if (singleLegs.length < 2) return;
 
       processingRef.current = true;
-
-      const sortedLegs = singleLegs.sort((a, b) => {
+      
+      // Explicitly type the result as Trip[]
+      const sortedLegs: Trip[] = singleLegs.sort((a, b) => {
           const dateA = getTripStartDate(a);
           const dateB = getTripStartDate(b);
           if (!dateA) return 1;
@@ -292,6 +293,7 @@ const App: React.FC = () => {
           return dateA.getTime() - dateB.getTime();
       });
 
+      // Explicitly type unpairedLegs
       const unpairedLegs: { trip: Trip; paired: boolean }[] = sortedLegs.map(trip => ({ trip, paired: false }));
 
       for (let i = 0; i < unpairedLegs.length; i++) {
@@ -621,9 +623,11 @@ const App: React.FC = () => {
     }
   }, [sortedTrips, listFilter]);
   
+  // Explicitly type useMemo return and its generic to avoid 'never' inference
   const nextTripInfo = useMemo<{ trip: Trip; flight: Flight; flightType: 'ida' | 'vuelta' } | null>(() => {
     const now = new Date();
-    const futureTrips = sortedTrips
+    // Use an explicit type for the mapped array items
+    const futureTrips: { trip: Trip; idaDate: Date | null; vueltaDate: Date | null; idaFlight: Flight | null; vueltaFlight: Flight | null }[] = sortedTrips
       .map(trip => {
         const idaDate = trip.departureFlight?.departureDateTime ? new Date(trip.departureFlight.departureDateTime) : null;
         const vueltaDate = trip.returnFlight?.departureDateTime ? new Date(trip.returnFlight.departureDateTime) : null;
@@ -701,8 +705,11 @@ const App: React.FC = () => {
         )
     }
 
+    // Access property safely
+    const nextTripId = nextTripInfo?.trip?.id || null;
+
     return (
-        <div className="max-w-4xl mx-auto px-4 py-6 font-sans">
+        <div className="max-w-4xl mx-auto px-3 sm:px-4 py-6 font-sans">
             <Header 
                 theme={theme} 
                 onToggleTheme={handleToggleTheme} 
@@ -759,12 +766,12 @@ const App: React.FC = () => {
 
                 {view === 'list' && (
                     <div className="mb-6 flex justify-center">
-                        <div className="bg-slate-200/70 dark:bg-slate-800/50 backdrop-blur-md border border-slate-300/80 dark:border-slate-700/50 p-1 rounded-full flex items-center space-x-1">
+                        <div className="bg-slate-200/70 dark:bg-slate-800/50 backdrop-blur-md border border-slate-300/80 dark:border-slate-700/50 p-1 rounded-full flex items-center space-x-1 overflow-x-auto max-w-full">
                              {filterOptions.map(opt => (
                                 <button
                                     key={opt.key}
                                     onClick={() => setListFilter(opt.key)}
-                                    className={`px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-300 ${listFilter === opt.key ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'}`}
+                                    className={`px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-300 whitespace-nowrap ${listFilter === opt.key ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'}`}
                                     aria-pressed={listFilter === opt.key}
                                 >
                                     {opt.label}
@@ -774,7 +781,7 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripInfo ? nextTripInfo.trip.id : null} userId={user.uid} groupingState={groupingState} onStartGrouping={handleStartGrouping} onConfirmGrouping={handleConfirmGrouping} />}
+                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} listFilter={listFilter} nextTripId={nextTripId} userId={user.uid} groupingState={groupingState} onStartGrouping={handleStartGrouping} onConfirmGrouping={handleConfirmGrouping} />}
                 {view === 'calendar' && <CalendarView trips={trips} />}
                 {view === 'costs' && <CostSummary trips={trips} />}
 

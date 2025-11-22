@@ -11,13 +11,13 @@ interface CostSummaryProps {
 }
 
 const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string; gradient: string }> = ({ icon, label, value, gradient }) => (
-    <div className="flex-1 p-4 rounded-xl flex items-center space-x-4 bg-slate-100 dark:bg-slate-800 shadow-neumo-light-out dark:shadow-neumo-dark-out">
-        <div className={`p-3 rounded-full ${gradient} text-white shadow-lg`}>
+    <div className="flex-1 p-3 sm:p-4 rounded-xl flex items-center space-x-3 sm:space-x-4 bg-slate-100 dark:bg-slate-800 shadow-neumo-light-out dark:shadow-neumo-dark-out min-w-0">
+        <div className={`p-2 sm:p-3 rounded-full ${gradient} text-white shadow-lg flex-shrink-0`}>
            {icon}
         </div>
-        <div>
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{label}</p>
-            <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{value}</p>
+        <div className="min-w-0">
+            <p className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 truncate">{label}</p>
+            <p className="text-lg sm:text-2xl font-bold text-slate-800 dark:text-slate-100 truncate">{value}</p>
         </div>
     </div>
 );
@@ -37,7 +37,6 @@ const formatPaymentMethod = (paymentMethod: string | null): string => {
   if (paymentMethod.includes('8059')) return 'Crédito Yoy';
   if (paymentMethod.includes('7005')) return 'Débito Nación';
   
-  // Return the formatted name if it's already one of the standards, otherwise return the raw string.
   const standards = ['Débito Macro', 'Débito Ciudad', 'Crédito Macro', 'Crédito Ciudad', 'Crédito Yoy', 'Débito Nación'];
   if (standards.includes(paymentMethod)) return paymentMethod;
 
@@ -75,7 +74,6 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     
     const tripsForSelectedYear = useMemo(() => {
         return trips.filter(trip => {
-            // Regla estricta: Usamos purchaseDate para asignar el año fiscal del gasto.
             const costDateStr = trip.purchaseDate || trip.createdAt;
             return costDateStr ? new Date(costDateStr).getFullYear() === selectedYear : false;
         });
@@ -119,7 +117,6 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     }, [tripsForSelectedYear]);
     
     const monthlyBreakdown = useMemo(() => {
-        // Estructura para guardar costos y los detalles de los items (vuelos)
         type MonthlyItem = {
             flight: Flight;
             type: 'ida' | 'vuelta';
@@ -129,12 +126,11 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
         const dataByMonth: { [monthIndex: number]: { cost: number; items: MonthlyItem[] } } = {};
 
         for (const trip of tripsForSelectedYear) {
-            // Regla de negocio: La fecha del gasto es la de compra.
             const costDateStr = trip.purchaseDate || trip.createdAt;
             if (!costDateStr) continue;
 
             const purchaseDate = new Date(costDateStr);
-            const monthIndex = purchaseDate.getMonth(); // 0 para Enero
+            const monthIndex = purchaseDate.getMonth();
             
             if (isNaN(monthIndex)) continue;
 
@@ -142,7 +138,6 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                 dataByMonth[monthIndex] = { cost: 0, items: [] };
             }
 
-            // Procesar Ida
             if (trip.departureFlight && (trip.departureFlight.cost || 0) > 0) {
                 dataByMonth[monthIndex].cost += trip.departureFlight.cost || 0;
                 dataByMonth[monthIndex].items.push({
@@ -152,7 +147,6 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                 });
             }
 
-            // Procesar Vuelta
             if (trip.returnFlight && (trip.returnFlight.cost || 0) > 0) {
                 dataByMonth[monthIndex].cost += trip.returnFlight.cost || 0;
                 dataByMonth[monthIndex].items.push({
@@ -191,49 +185,49 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     }
   
     return (
-    <div className="bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out p-4 md:p-6 space-y-8">
+    <div className="bg-slate-100 dark:bg-slate-800 rounded-xl shadow-neumo-light-out dark:shadow-neumo-dark-out p-3 sm:p-6 space-y-6 sm:space-y-8">
         <div>
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold">Resumen Anual</h3>
+            <div className="flex justify-between items-center mb-4 px-1">
+                <h3 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-white">Resumen Anual</h3>
                 <select 
                     value={selectedYear} 
                     onChange={e => setSelectedYear(parseInt(e.target.value))}
-                    className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-1.5 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-neumo-light-out dark:shadow-neumo-dark-out appearance-none"
+                    className="bg-white dark:bg-slate-700 rounded-lg px-3 py-1.5 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-sm appearance-none text-slate-800 dark:text-slate-200"
                 >
                     {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
                 </select>
             </div>
-            <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex flex-row gap-3">
                 <StatCard 
-                    icon={<BriefcaseIcon className="h-6 w-6" />}
-                    label="Viajes Realizados"
+                    icon={<BriefcaseIcon className="h-5 w-5 sm:h-6 sm:w-6" />}
+                    label="Viajes"
                     value={totalCompletedTrips.toString()}
                     gradient="bg-gradient-to-br from-indigo-500 to-purple-600"
                 />
                  <StatCard 
-                    icon={<CurrencyIcon className="h-6 w-6" />}
+                    icon={<CurrencyIcon className="h-5 w-5 sm:h-6 sm:w-6" />}
                     label="Gasto Total"
-                    value={`$${totalCostForYear.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    value={`$${totalCostForYear.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`}
                     gradient="bg-gradient-to-br from-teal-500 to-cyan-600"
                 />
             </div>
         </div>
 
         {paymentMethodSummary.length > 0 && (
-            <div>
-                <h3 className="text-xl font-bold mb-4">Gastos por Método de Pago</h3>
+            <div className="px-1">
+                <h3 className="text-lg sm:text-xl font-bold mb-3 text-slate-800 dark:text-white">Métodos de Pago</h3>
                 <div className="space-y-3">
                     {paymentMethodSummary.map(({ method, total }) => {
                         const widthPercentage = totalCostForYear > 0 ? (total / totalCostForYear) * 100 : 0;
                         return (
                             <div key={method}>
-                                <div className="flex justify-between items-center mb-1 text-sm">
-                                    <span className="font-semibold text-slate-600 dark:text-slate-300">{method}</span>
-                                    <span className="font-bold text-slate-800 dark:text-slate-100">${total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                <div className="flex justify-between items-center mb-1 text-xs sm:text-sm">
+                                    <span className="font-semibold text-slate-600 dark:text-slate-300 truncate pr-2">{method}</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-100">${total.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                                 </div>
-                                <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-2 shadow-neumo-light-in dark:shadow-neumo-dark-in">
+                                <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-1.5 sm:h-2 shadow-inner">
                                     <div
-                                        className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full transition-all duration-500 ease-out"
+                                        className="bg-gradient-to-r from-indigo-500 to-purple-600 h-1.5 sm:h-2 rounded-full transition-all duration-500 ease-out"
                                         style={{ width: `${widthPercentage}%` }}
                                     />
                                 </div>
@@ -244,9 +238,9 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
             </div>
         )}
 
-        <div>
-            <h3 className="text-xl font-bold mb-4">Desglose Mensual</h3>
-            <div className="space-y-3">
+        <div className="px-1">
+            <h3 className="text-lg sm:text-xl font-bold mb-4 text-slate-800 dark:text-white">Desglose Mensual</h3>
+            <div className="space-y-2 sm:space-y-3">
                 {monthlyBreakdown.map(({ name, cost, index, items }) => {
                     const widthPercentage = maxMonthlyCost > 0 ? (cost / maxMonthlyCost) * 100 : 0;
                     const isExpanded = expandedMonth === index;
@@ -255,49 +249,69 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                     return (
                         <div key={name} className="flex flex-col">
                             <div 
-                                className={`flex items-center gap-3 sm:gap-4 text-sm py-2 rounded-lg transition-colors ${hasData ? 'cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700/50' : 'opacity-50'}`}
+                                className={`flex items-center gap-2 py-2 rounded-lg transition-colors select-none ${hasData ? 'cursor-pointer active:bg-slate-200 dark:active:bg-slate-700/80 sm:hover:bg-slate-200 sm:dark:hover:bg-slate-700/50' : 'opacity-40'}`}
                                 onClick={() => hasData && handleToggleMonth(index)}
                             >
-                                <span className="font-semibold text-slate-600 dark:text-slate-400 w-10 text-right">{name}</span>
-                                <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-3 shadow-neumo-light-in dark:shadow-neumo-dark-in relative overflow-hidden">
+                                {/* Nombre del Mes */}
+                                <span className="font-semibold text-sm text-slate-600 dark:text-slate-400 w-8 text-right">{name}</span>
+                                
+                                {/* Barra de Progreso */}
+                                <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-2.5 sm:h-3 shadow-inner relative overflow-hidden mx-1">
                                     <div
-                                        className="bg-gradient-to-r from-indigo-500 to-teal-500 h-3 rounded-full transition-all duration-500 ease-out"
+                                        className="bg-gradient-to-r from-indigo-500 to-teal-500 h-2.5 sm:h-3 rounded-full transition-all duration-500 ease-out"
                                         style={{ width: `${widthPercentage}%` }}
                                     />
                                 </div>
-                                <span className="font-bold text-slate-700 dark:text-slate-200 w-24 text-left">
-                                    ${cost.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                                {hasData && (
-                                    <ChevronDownIcon className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+                                
+                                {/* Monto */}
+                                <div className="w-24 sm:w-28 text-right">
+                                     <span className="font-bold text-sm sm:text-base text-slate-700 dark:text-slate-200 block truncate">
+                                        ${cost.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+
+                                {/* Icono Expandir */}
+                                {hasData ? (
+                                    <ChevronDownIcon className={`w-4 h-4 text-slate-500 flex-shrink-0 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+                                ) : (
+                                    <div className="w-4 h-4" />
                                 )}
                             </div>
 
-                            {/* Expanded Details */}
-                            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[2000px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
-                                <div className="pl-14 pr-2 pb-2 space-y-2">
+                            {/* Detalle Expandido - Optimizado para móvil */}
+                            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[2000px] opacity-100 mt-1' : 'max-h-0 opacity-0'}`}>
+                                <div className="space-y-2 pl-2 sm:pl-10">
                                     {items.map((item, i) => (
-                                        <div key={i} className="bg-white dark:bg-slate-900 p-3 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 flex justify-between items-center text-sm">
-                                            <div className="flex items-center space-x-3">
-                                                <AirlineLogo airline={item.flight.airline} size="xs" type="isotipo" />
-                                                <div>
-                                                    <div className="flex items-center space-x-2">
-                                                        <span className="font-bold dark:text-white">{item.flight.flightNumber}</span>
-                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wide ${item.type === 'ida' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'}`}>
+                                        <div key={i} className="bg-white dark:bg-slate-900 p-3 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm relative overflow-hidden">
+                                            {/* Decoración lateral para indicar tipo */}
+                                            <div className={`absolute left-0 top-0 bottom-0 w-1 ${item.type === 'ida' ? 'bg-blue-500' : 'bg-green-500'}`}></div>
+                                            
+                                            <div className="flex items-start justify-between sm:w-full pl-2">
+                                                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                                                     <div className="flex items-center gap-2">
+                                                         <AirlineLogo airline={item.flight.airline} size="xs" type="isotipo" />
+                                                         <span className="font-bold dark:text-white">{item.flight.flightNumber}</span>
+                                                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wide sm:hidden ${item.type === 'ida' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'}`}>
                                                             {item.type}
                                                         </span>
-                                                    </div>
-                                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                                        Vuelo: {formatDate(item.flight.departureDateTime)} • Compra: {formatDate(item.purchaseDate)}
-                                                    </div>
-                                                    <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                                                     </div>
+                                                     <div className="text-xs text-slate-500 dark:text-slate-400">
+                                                        <span className="hidden sm:inline">• </span>
+                                                        {formatDate(item.flight.departureDateTime)}
+                                                        <span className="mx-1">•</span>
+                                                        Compra: {formatDate(item.purchaseDate)}
+                                                     </div>
+                                                </div>
+
+                                                <div className="text-right">
+                                                     <span className="font-bold text-slate-700 dark:text-slate-200 block">
+                                                        ${(item.flight.cost || 0).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                                    </span>
+                                                     <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 truncate max-w-[100px] sm:max-w-none ml-auto">
                                                        {formatPaymentMethod(item.flight.paymentMethod)}
                                                     </div>
                                                 </div>
                                             </div>
-                                            <span className="font-bold text-slate-700 dark:text-slate-200">
-                                                ${(item.flight.cost || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </span>
                                         </div>
                                     ))}
                                 </div>
