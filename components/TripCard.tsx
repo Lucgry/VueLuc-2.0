@@ -13,6 +13,7 @@ import { DocumentTextIcon } from './icons/DocumentTextIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { Spinner } from './Spinner';
 import { LinkSlashIcon } from './icons/LinkSlashIcon';
+import { CalendarPlusIcon } from './icons/CalendarPlusIcon';
 
 const LinkIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
@@ -66,8 +67,34 @@ const formatPaymentMethod = (paymentMethod: string | null): string => {
   return paymentMethod;
 };
 
+const generateGoogleCalendarUrl = (flight: Flight): string | null => {
+    if (!flight.departureDateTime || !flight.arrivalDateTime) return null;
+
+    // Helper to format dates to YYYYMMDDTHHmmssZ (UTC)
+    const formatGoogleDate = (dateStr: string) => {
+        const date = new Date(dateStr);
+        return date.toISOString().replace(/-|:|\.\d\d\d/g, "");
+    };
+
+    const start = formatGoogleDate(flight.departureDateTime);
+    const end = formatGoogleDate(flight.arrivalDateTime);
+    
+    const title = `✈️ Vuelo a ${flight.arrivalCity} (${flight.airline} ${flight.flightNumber})`;
+    
+    let details = `Vuelo: ${flight.flightNumber || 'N/A'}\n`;
+    details += `Aerolínea: ${flight.airline || 'N/A'}\n`;
+    details += `Reserva: ${flight.bookingReference || 'N/A'}\n`;
+    details += `Salida: ${flight.departureCity} (${flight.departureAirportCode})\n`;
+    details += `Llegada: ${flight.arrivalCity} (${flight.arrivalAirportCode})`;
+
+    const location = `${flight.departureAirportCode}, ${flight.departureCity}`;
+
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${start}/${end}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
+};
+
 const FlightInfo: React.FC<{ flight: Flight; type: 'Ida' | 'Vuelta' }> = ({ flight, type }) => {
   if (!flight) return null;
+  const calendarUrl = generateGoogleCalendarUrl(flight);
 
   return (
     <div className="flex-1">
@@ -106,9 +133,22 @@ const FlightInfo: React.FC<{ flight: Flight; type: 'Ida' | 'Vuelta' }> = ({ flig
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">{flight.arrivalAirportCode}</p>
         </div>
       </div>
-       <div className="text-center text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {flight.departureCity} &rarr; {flight.arrivalCity}
-        </div>
+       <div className="flex items-center justify-center mt-2 relative">
+            <div className="text-center text-xs text-slate-500 dark:text-slate-400">
+                {flight.departureCity} &rarr; {flight.arrivalCity}
+            </div>
+            {calendarUrl && (
+                 <a 
+                    href={calendarUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="absolute right-0 top-1/2 -translate-y-1/2 text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 p-1 rounded-full hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors"
+                    title="Agregar a Google Calendar"
+                >
+                    <CalendarPlusIcon className="w-4 h-4" />
+                </a>
+            )}
+       </div>
     </div>
   );
 };
