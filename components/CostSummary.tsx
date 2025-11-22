@@ -274,7 +274,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                             </div>
 
                             {/* Expanded Details */}
-                            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-96 opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
+                            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[2000px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
                                 <div className="pl-14 pr-2 pb-2 space-y-2">
                                     {items.map((item, i) => (
                                         <div key={i} className="bg-white dark:bg-slate-900 p-3 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 flex justify-between items-center text-sm">
