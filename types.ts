@@ -18,6 +18,7 @@ export interface Trip {
   purchaseDate?: string;
   departureFlight: Flight | null;
   returnFlight: Flight | null;
+  manualSplit?: boolean;
 }
 
 export interface BoardingPassData {

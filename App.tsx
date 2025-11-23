@@ -250,6 +250,7 @@ const App: React.FC = () => {
       const updatedData: Partial<Omit<Trip, 'id' | 'createdAt'>> = {
         departureFlight: idaTrip.departureFlight,
         returnFlight: vueltaTrip.returnFlight,
+        manualSplit: false // Clear the flag if user manually groups them
       };
 
       if (idaTrip.purchaseDate && vueltaTrip.purchaseDate) {
@@ -288,24 +289,28 @@ const App: React.FC = () => {
 
       try {
           // 1. Create new trip for the return flight (Vuelta)
+          // Mark it as manually split so auto-grouper ignores it
           const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
-          // Use the same creation date or a new one? Keeping same might be less confusing for sort.
-          // Actually, for logic, let's use current date to avoid it getting buried, or keep original.
-          // Let's use the same createdAt to keep them relatively close in history if sorted by created.
+          
+          // Ensure no undefined values are passed to Firestore
+          const purchaseDate = trip.purchaseDate || null;
+
           const newVueltaTripRef = await addDoc(tripsCollectionRef, {
               departureFlight: null,
               returnFlight: trip.returnFlight,
-              purchaseDate: trip.purchaseDate, // Copy purchase date
-              createdAt: trip.createdAt 
+              purchaseDate: purchaseDate, 
+              createdAt: trip.createdAt || new Date().toISOString(),
+              manualSplit: true 
           });
           
           // 2. Move Boarding Pass if it exists (Vuelta pass on old trip -> Vuelta pass on new trip)
           await moveBoardingPass(user.uid, trip.id, newVueltaTripRef.id, 'vuelta');
 
-          // 3. Update original trip to remove return flight
+          // 3. Update original trip to remove return flight and mark as manually split
           const originalTripRef = doc(db, 'users', user.uid, 'trips', trip.id);
           await updateDoc(originalTripRef, {
-              returnFlight: null
+              returnFlight: null,
+              manualSplit: true
           });
           
       } catch (error) {
@@ -323,7 +328,6 @@ const App: React.FC = () => {
 
       processingRef.current = true;
       
-      // Explicitly type the result as Trip[]
       const sortedLegs: Trip[] = singleLegs.sort((a, b) => {
           const dateA = getTripStartDate(a);
           const dateB = getTripStartDate(b);
@@ -332,7 +336,6 @@ const App: React.FC = () => {
           return dateA.getTime() - dateB.getTime();
       });
 
-      // Explicitly type unpairedLegs
       const unpairedLegs: { trip: Trip; paired: boolean }[] = sortedLegs.map(trip => ({ trip, paired: false }));
 
       for (let i = 0; i < unpairedLegs.length; i++) {
@@ -346,6 +349,10 @@ const App: React.FC = () => {
               if (nextLegIndex < unpairedLegs.length && !unpairedLegs[nextLegIndex].paired) {
                   const nextLeg = unpairedLegs[nextLegIndex].trip;
                   const isVuelta = !!nextLeg.returnFlight;
+
+                  // SKIP if either trip was manually split by the user
+                  if (currentLeg.manualSplit || nextLeg.manualSplit) continue;
+
                   if (isVuelta) {
                       console.log(`Emparejando IDA ${currentLeg.id} con VUELTA ${nextLeg.id}`);
                       await mergeTrips(currentLeg, nextLeg);
@@ -398,13 +405,11 @@ const App: React.FC = () => {
         const promises: Promise<void>[] = [];
         let duplicatesFound = 0;
 
-        // Sort trips by creation date to keep the oldest one in case of duplicates
         const sortedForCleanup = [...trips].sort((a, b) => 
             new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
         );
 
         for (const trip of sortedForCleanup) {
-            // Force non-null assertion because we checked !db at the start of useEffect
             const tripRef = doc(db!, 'users', user.uid, 'trips', trip.id);
             let isModified = false;
             const updates: { departureFlight: Flight | null; returnFlight: Flight | null } = {
@@ -412,481 +417,295 @@ const App: React.FC = () => {
                 returnFlight: trip.returnFlight,
             };
 
-            // Check departure flight
             if (updates.departureFlight) {
                 const fingerprint = getFlightFingerprint(updates.departureFlight);
                 if (fingerprint && seenFingerprints.has(fingerprint)) {
                     updates.departureFlight = null;
                     isModified = true;
                     duplicatesFound++;
-                    console.log(`Duplicado encontrado (IDA): Vuelo ${fingerprint} en viaje ${trip.id}`);
                 } else if (fingerprint) {
                     seenFingerprints.add(fingerprint);
                 }
             }
 
-            // Check return flight
             if (updates.returnFlight) {
                 const fingerprint = getFlightFingerprint(updates.returnFlight);
                 if (fingerprint && seenFingerprints.has(fingerprint)) {
                     updates.returnFlight = null;
                     isModified = true;
                     duplicatesFound++;
-                    console.log(`Duplicado encontrado (VUELTA): Vuelo ${fingerprint} en viaje ${trip.id}`);
                 } else if (fingerprint) {
                     seenFingerprints.add(fingerprint);
                 }
             }
 
-            // Decide action: delete, update, or do nothing
             if (isModified) {
                 if (!updates.departureFlight && !updates.returnFlight) {
-                    // Both flights were duplicates, delete the whole trip doc
                     promises.push(deleteDoc(tripRef));
-                    console.log(`Viaje ${trip.id} marcado para eliminación completa.`);
                 } else {
-                    // One flight was a duplicate, update the trip doc
                     promises.push(updateDoc(tripRef, updates));
-                    console.log(`Viaje ${trip.id} marcado para actualización.`);
                 }
             }
         }
         
         if (promises.length > 0) {
             await Promise.all(promises);
-            console.log(`Limpieza completada. Se procesaron ${promises.length} operaciones de escritura/eliminación.`);
-            alert(`Se han eliminado ${duplicatesFound} vuelos duplicados que se encontraron en tus registros.`);
-        } else {
-             console.log("No se encontraron duplicados durante la limpieza.");
+            console.log(`Limpieza completada: ${duplicatesFound} duplicados eliminados.`);
         }
     };
     
     runDuplicateCleanup();
+  }, [user, db, trips]);
 
-  }, [trips, user, db]);
+  const onStartGrouping = (trip: Trip) => {
+      setGroupingState({ active: true, sourceTrip: trip });
+  };
 
-
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (event: Event) => {
-      event.preventDefault(); 
-      setInstallPromptEvent(event as BeforeInstallPromptEvent);
+  const onConfirmGrouping = async (targetTrip: Trip) => {
+      const sourceTrip = groupingState.sourceTrip;
+      if (!sourceTrip) return;
       
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-      const bannerDismissed = sessionStorage.getItem('vueluc.bannerDismissed');
+      // Determine which is Ida and which is Vuelta
+      let idaTrip: Trip | null = null;
+      let vueltaTrip: Trip | null = null;
 
-      if (!isStandalone && !bannerDismissed) {
-        setIsInstallBannerVisible(true);
+      if (sourceTrip.departureFlight) idaTrip = sourceTrip;
+      else if (sourceTrip.returnFlight) vueltaTrip = sourceTrip;
+
+      if (targetTrip.departureFlight) idaTrip = targetTrip;
+      else if (targetTrip.returnFlight) vueltaTrip = targetTrip;
+
+      if (idaTrip && vueltaTrip) {
+          await mergeTrips(idaTrip, vueltaTrip);
+      } else {
+          alert("Debes seleccionar un viaje compatible (Ida + Vuelta).");
       }
-    };
+      setGroupingState({ active: false, sourceTrip: null });
+  };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  const onAddTrip = async (tripData: Omit<Trip, 'id' | 'createdAt'>) => {
+      if (!user) return;
+      const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
+      await addDoc(tripsCollectionRef, {
+          ...tripData,
+          createdAt: new Date().toISOString(),
+          purchaseDate: tripData.purchaseDate || new Date().toISOString()
+      });
+      setIsModalOpen(false);
+      setIsQuickAddModalOpen(false);
+  };
 
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
-  }, []);
+  const onDeleteTrip = async (tripId: string) => {
+      if (!user || !db) return;
+      if (window.confirm('¿Estás seguro de que deseas eliminar este viaje?')) {
+          await deleteDoc(doc(db, 'users', user.uid, 'trips', tripId));
+          await deleteBoardingPassesForTrip(user.uid, tripId);
+      }
+  };
 
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    document.documentElement.classList.toggle('dark', newTheme === 'dark');
+  };
+
+  // Initial theme application
   useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    localStorage.setItem('theme', theme);
+     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
-  
-  const handleKeySave = (key: string) => {
+
+  const handleApiKeySave = (key: string) => {
     localStorage.setItem('gemini_api_key', key);
     setApiKey(key);
   };
   
-  const handleInvalidApiKey = () => {
-    localStorage.removeItem('gemini_api_key');
-    setApiKey(null);
-    alert('La API Key no es válida o ha expirado. Por favor, ingresa una nueva.');
+  // Install PWA Logic
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPromptEvent(e as BeforeInstallPromptEvent);
+      setIsInstallBannerVisible(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = () => {
+    if (!installPromptEvent) return;
+    installPromptEvent.prompt();
+    installPromptEvent.userChoice.then((choiceResult) => {
+      if (choiceResult.outcome === 'accepted') {
+        setIsInstallBannerVisible(false);
+      }
+      setInstallPromptEvent(null);
+    });
   };
 
-  const handleToggleTheme = () => {
-    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
-  };
-
-  const handleToggleAirportMode = () => {
-      setIsAirportMode(prev => !prev);
+  if (loadingAuth) {
+      return <FullScreenLoader />;
   }
 
-  const handleAddTrip = async (newTripData: Omit<Trip, 'id' | 'createdAt'>) => {
-    if (!user || !db) throw new Error("Usuario no autenticado.");
+  if (authRuntimeError) {
+      return <AuthErrorScreen error={authRuntimeError} />;
+  }
 
-    // --- Verificación de duplicados ---
-    const depFingerprint = getFlightFingerprint(newTripData.departureFlight);
-    const retFingerprint = getFlightFingerprint(newTripData.returnFlight);
+  if (!user) {
+    return <LoginScreen />;
+  }
 
-    const existingFingerprints = new Set<string>();
-    trips.forEach(trip => {
-        const existingDep = getFlightFingerprint(trip.departureFlight);
-        const existingRet = getFlightFingerprint(trip.returnFlight);
-        if (existingDep) existingFingerprints.add(existingDep);
-        if (existingRet) existingFingerprints.add(existingRet);
-    });
+  if (!apiKey) {
+    return <ApiKeySetup onKeySave={handleApiKeySave} />;
+  }
 
-    if (depFingerprint && existingFingerprints.has(depFingerprint)) {
-        alert(`El vuelo de ida (${newTripData.departureFlight?.flightNumber}) ya existe. No se agregará.`);
-        setIsModalOpen(false);
-        setIsQuickAddModalOpen(false);
-        return;
-    }
-    if (retFingerprint && existingFingerprints.has(retFingerprint)) {
-        alert(`El vuelo de vuelta (${newTripData.returnFlight?.flightNumber}) ya existe. No se agregará.`);
-        setIsModalOpen(false);
-        setIsQuickAddModalOpen(false);
-        return;
-    }
-    // --- Fin de la verificación ---
+  // Determine Next Trip for "NextTripCard" (exclude completed)
+  const futureTrips = trips.filter(trip => {
+      const end = getTripEndDate(trip);
+      return end && end > new Date();
+  }).sort((a, b) => {
+      const startA = getTripStartDate(a);
+      const startB = getTripStartDate(b);
+      return (startA?.getTime() || 0) - (startB?.getTime() || 0);
+  });
+  const nextTrip = futureTrips[0];
+  const nextTripFlight = nextTrip ? (nextTrip.departureFlight || nextTrip.returnFlight) : null;
+  const nextTripFlightType = nextTrip && nextTrip.departureFlight ? 'ida' : 'vuelta';
 
-    try {
-        const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
-        await addDoc(tripsCollectionRef, { ...newTripData, createdAt: new Date().toISOString() });
-        setIsModalOpen(false);
-        setIsQuickAddModalOpen(false);
-    } catch (error) {
-        console.error("Error adding trip to Firestore:", error);
-        throw new Error('No se pudo guardar el viaje en la base de datos.');
-    }
-  };
 
-  const handleDeleteTrip = async (tripId: string) => {
-    if (!user || !db) return;
-    try {
-      await deleteBoardingPassesForTrip(user.uid, tripId);
-      const tripDocRef = doc(db, 'users', user.uid, 'trips', tripId);
-      await deleteDoc(tripDocRef);
-    } catch (error) {
-      console.error("Error deleting trip:", error);
-      alert('No se pudo eliminar el viaje. Por favor, intenta de nuevo.');
-    }
-  };
+  const filteredTrips = trips.filter(trip => {
+      const startDate = getTripStartDate(trip);
+      const endDate = getTripEndDate(trip);
+      const now = new Date();
 
-  const handleInstall = () => {
-    installPromptEvent?.prompt();
-    installPromptEvent?.userChoice.then(choiceResult => {
-      if (choiceResult.outcome === 'accepted') {
-        console.log('User accepted the install prompt');
-      } else {
-        console.log('User dismissed the install prompt');
+      if (listFilter === 'future') {
+          return endDate && endDate >= now;
       }
-      setIsInstallBannerVisible(false);
-    });
-  };
-
-  const handleDismissInstallBanner = () => {
-      sessionStorage.setItem('vueluc.bannerDismissed', 'true');
-      setIsInstallBannerVisible(false);
-  };
-    
-  // --- Manual Grouping Handlers ---
-  const handleStartGrouping = (trip: Trip) => {
-    setGroupingState({ active: true, sourceTrip: trip });
-  };
-
-  const handleCancelGrouping = () => {
-    setGroupingState({ active: false, sourceTrip: null });
-  };
-
-  const handleConfirmGrouping = async (targetTrip: Trip) => {
-      const sourceTrip = groupingState.sourceTrip;
-      if (!sourceTrip || !targetTrip || sourceTrip.id === targetTrip.id) {
-          handleCancelGrouping();
-          return;
+      if (listFilter === 'completed') {
+          return endDate && endDate < now;
       }
-
-      const idaTrip = sourceTrip.departureFlight ? sourceTrip : targetTrip;
-      const vueltaTrip = sourceTrip.returnFlight ? sourceTrip : targetTrip;
-
-      if (!idaTrip.departureFlight || !vueltaTrip.returnFlight || idaTrip.returnFlight || vueltaTrip.departureFlight) {
-          alert("Selección inválida. Debes seleccionar un viaje de solo ida y uno de solo vuelta para agrupar.");
-          handleCancelGrouping();
-          return;
+      if (listFilter === 'currentMonth') {
+          return startDate && startDate.getMonth() === now.getMonth() && startDate.getFullYear() === now.getFullYear();
       }
-      
-      const confirmed = window.confirm("¿Estás seguro de que quieres unir estos dos tramos en un solo viaje de ida y vuelta?");
-      if (!confirmed) {
-          handleCancelGrouping();
-          return;
-      }
+      return true;
+  });
 
-      try {
-          await mergeTrips(idaTrip, vueltaTrip);
-      } catch (error) {
-          console.error("Error al agrupar viajes manualmente:", error);
-          alert("Ocurrió un error al agrupar los viajes.");
-      } finally {
-          handleCancelGrouping();
-      }
-  };
-
-
-  const sortedTrips: Trip[] = useMemo(() => {
-      return [...trips].sort((a, b) => {
-          const dateA = getTripStartDate(a);
-          const dateB = getTripStartDate(b);
-          if (!dateA) return 1;
-          if (!dateB) return -1;
-          return dateB.getTime() - dateA.getTime();
-      });
-  }, [trips]);
-  
-  const filteredTrips: Trip[] = useMemo(() => {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-
-    switch (listFilter) {
-      case 'future':
-        return sortedTrips.filter(trip => {
-          const tripEndDate = getTripEndDate(trip);
-          return tripEndDate ? tripEndDate >= now : true;
-        });
-      case 'completed':
-        return sortedTrips.filter(trip => {
-          const tripEndDate = getTripEndDate(trip);
-          return tripEndDate ? tripEndDate < now : false;
-        });
-      case 'currentMonth':
-         return sortedTrips.filter(trip => {
-            const tripStartDate = getTripStartDate(trip);
-            return tripStartDate && tripStartDate >= startOfMonth && tripStartDate <= endOfMonth;
-        });
-      case 'all':
-      default:
-        return sortedTrips;
-    }
-  }, [sortedTrips, listFilter]);
-  
-  // Explicitly type useMemo return and its generic to avoid 'never' inference
-  const nextTripInfo = useMemo<{ trip: Trip; flight: Flight; flightType: 'ida' | 'vuelta' } | null>(() => {
-    const now = new Date();
-    // Use an explicit type for the mapped array items
-    const futureTrips: { trip: Trip; idaDate: Date | null; vueltaDate: Date | null; idaFlight: Flight | null; vueltaFlight: Flight | null }[] = sortedTrips
-      .map(trip => {
-        const idaDate = trip.departureFlight?.departureDateTime ? new Date(trip.departureFlight.departureDateTime) : null;
-        const vueltaDate = trip.returnFlight?.departureDateTime ? new Date(trip.returnFlight.departureDateTime) : null;
+  return (
+    <div className={`min-h-screen transition-colors duration-300 ${theme === 'dark' ? 'dark' : ''}`}>
+       <div className="max-w-4xl mx-auto p-4 sm:p-6 pb-24">
+         <Header 
+            theme={theme} 
+            onToggleTheme={toggleTheme} 
+            isAirportMode={isAirportMode} 
+            onToggleAirportMode={() => setIsAirportMode(true)}
+        />
         
-        return {
-          trip,
-          idaDate,
-          vueltaDate,
-          idaFlight: trip.departureFlight,
-          vueltaFlight: trip.returnFlight
-        };
-      })
-      .filter(t => (t.idaDate && t.idaDate > now) || (t.vueltaDate && t.vueltaDate > now));
-
-    if (futureTrips.length === 0) {
-      return null;
-    }
-    
-    let nextFlight: Flight | null = null;
-    let nextFlightType: 'ida' | 'vuelta' | null = null;
-    let nextTrip: Trip | null = null;
-    let nextFlightDate = new Date('2999-12-31');
-
-    futureTrips.forEach(t => {
-      if (t.idaDate && t.idaDate > now && t.idaDate < nextFlightDate) {
-        nextFlightDate = t.idaDate;
-        nextFlight = t.idaFlight;
-        nextFlightType = 'ida';
-        nextTrip = t.trip;
-      }
-      if (t.vueltaDate && t.vueltaDate > now && t.vueltaDate < nextFlightDate) {
-        nextFlightDate = t.vueltaDate;
-        nextFlight = t.vueltaFlight;
-        nextFlightType = 'vuelta';
-        nextTrip = t.trip;
-      }
-    });
-
-    if (nextFlight && nextTrip && nextFlightType) {
-        return {
-            trip: nextTrip,
-            flight: nextFlight,
-            flightType: nextFlightType
-        };
-    }
-
-    return null;
-  }, [sortedTrips]);
-  
-    if (loadingAuth) {
-        return <FullScreenLoader />;
-    }
-
-    if (authRuntimeError) {
-        return <AuthErrorScreen error={authRuntimeError} />;
-    }
-
-    if (!user) {
-        return <LoginScreen />;
-    }
-    
-    if (!apiKey) {
-      return <ApiKeySetup onKeySave={handleKeySave} />;
-    }
-    
-    if (isAirportMode && nextTripInfo && nextTripInfo.flight) {
-        return (
+        {isAirportMode && nextTrip && nextTripFlight && (
             <AirportModeView 
-                trip={nextTripInfo.trip}
-                flight={nextTripInfo.flight}
-                flightType={nextTripInfo.flightType}
-                onClose={handleToggleAirportMode}
+                trip={nextTrip} 
+                flight={nextTripFlight} 
+                flightType={nextTripFlightType}
+                onClose={() => setIsAirportMode(false)}
                 userId={user.uid}
             />
-        )
-    }
+        )}
 
-    // Access property safely
-    const nextTripId = nextTripInfo?.trip?.id || null;
-
-    return (
-        <div className="max-w-4xl mx-auto px-3 sm:px-4 py-6 font-sans">
-            <Header 
-                theme={theme} 
-                onToggleTheme={handleToggleTheme} 
-                isAirportMode={isAirportMode}
-                onToggleAirportMode={handleToggleAirportMode}
-            />
-            <main className="pb-28">
-                {groupingState.active && (
-                    <div className="sticky top-2 z-30 mb-4 -mt-2">
-                        <div className="max-w-4xl mx-auto bg-indigo-600/95 backdrop-blur-md text-white p-3 rounded-xl shadow-lg flex justify-between items-center">
-                            <div>
-                                <h3 className="font-bold">Modo Agrupación</h3>
-                                <p className="text-sm">Selecciona un viaje compatible para unirlo.</p>
-                            </div>
-                            <button 
-                                onClick={handleCancelGrouping}
-                                className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-md font-semibold text-sm transition"
-                            >
-                                Cancelar
-                            </button>
-                        </div>
-                    </div>
-                )}
-                {isInstallBannerVisible && (
-                <InstallBanner 
-                    onInstall={handleInstall} 
-                    onDismiss={handleDismissInstallBanner}
-                />
-                )}
-                
-                {nextTripInfo && nextTripInfo.flight && (
-                    <NextTripCard flight={nextTripInfo.flight} flightType={nextTripInfo.flightType} />
-                )}
-
-                {/* --- SEGMENTED CONTROL (VIEW SWITCHER) --- */}
-                <div className="mb-4">
-                    <div className="bg-slate-200 dark:bg-slate-800 p-1 rounded-xl grid grid-cols-3 gap-1 shadow-inner">
-                        {([
-                            { viewName: 'list', Icon: ListBulletIcon, label: 'Lista' },
-                            { viewName: 'calendar', Icon: CalendarDaysIcon, label: 'Calendario' },
-                            { viewName: 'costs', Icon: CalculatorIcon, label: 'Costos' },
-                        ] as const).map(({ viewName, Icon, label }) => (
-                            <button
-                                key={viewName}
-                                onClick={() => setView(viewName)}
-                                className={`w-full py-2 text-sm font-semibold rounded-lg flex items-center justify-center space-x-1.5 transition-all duration-200 ${
-                                    view === viewName 
-                                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm ring-1 ring-slate-200 dark:ring-slate-600' 
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                                }`}
-                                aria-pressed={view === viewName}
-                            >
-                                <Icon className="h-4 w-4" />
-                                <span>{label}</span>
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* --- CHIPS (FILTER SWITCHER) --- */}
-                {view === 'list' && (
-                    <div className="mb-6 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 flex justify-start sm:justify-center space-x-2">
-                        {filterOptions.map(opt => (
-                        <button
-                            key={opt.key}
-                            onClick={() => setListFilter(opt.key)}
-                            className={`flex-shrink-0 px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 border ${
-                                listFilter === opt.key 
-                                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-transparent shadow-md' 
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
-                            }`}
-                            aria-pressed={listFilter === opt.key}
-                        >
-                            {opt.label}
-                        </button>
-                        ))}
-                    </div>
-                )}
-
-                {view === 'list' && <TripList trips={filteredTrips} onDeleteTrip={handleDeleteTrip} onSplitTrip={handleSplitTrip} listFilter={listFilter} nextTripId={nextTripId} userId={user.uid} groupingState={groupingState} onStartGrouping={handleStartGrouping} onConfirmGrouping={handleConfirmGrouping} />}
-                {view === 'calendar' && <CalendarView trips={trips} />}
-                {view === 'costs' && <CostSummary trips={trips} />}
-
-                {isModalOpen && <EmailImporter onClose={() => setIsModalOpen(false)} onAddTrip={handleAddTrip} apiKey={apiKey} onInvalidApiKey={handleInvalidApiKey} />}
-                {isQuickAddModalOpen && <QuickAddModal onClose={() => setIsQuickAddModalOpen(false)} onAddTrip={handleAddTrip} />}
-
-                <div className="fixed bottom-6 right-6 z-40">
-                    <div className="relative flex flex-col items-center">
-                        {isFabMenuOpen && (
-                            <div className="flex flex-col items-center space-y-3 mb-3">
-                                <div className="group relative">
-                                    <button
-                                        onClick={() => {
-                                            setIsQuickAddModalOpen(true);
-                                            setIsFabMenuOpen(false);
-                                        }}
-                                        className={`w-14 h-14 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 ease-in-out hover:scale-110 ${isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
-                                        style={{ transitionDelay: isFabMenuOpen ? '150ms' : '0ms' }}
-                                        aria-label="Agregar viaje manualmente"
-                                    >
-                                        <PencilSquareIcon className="h-7 w-7 text-sky-600 dark:text-sky-400" />
-                                    </button>
-                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                        Manual
-                                    </span>
-                                </div>
-                            
-                                <div className="group relative">
-                                    <button
-                                        onClick={() => {
-                                            setIsModalOpen(true);
-                                            setIsFabMenuOpen(false);
-                                        }}
-                                        className={`w-14 h-14 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 ease-in-out hover:scale-110 ${isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
-                                         style={{ transitionDelay: isFabMenuOpen ? '100ms' : '50ms' }}
-                                        aria-label="Agregar viaje con IA"
-                                    >
-                                        <MailIcon className="h-7 w-7 text-indigo-600 dark:text-indigo-400" />
-                                    </button>
-                                    <span className="absolute bottom-1/2 translate-y-1/2 right-full mr-3 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                        Con IA
-                                    </span>
-                                </div>
-                            </div>
-                        )}
-                        <button
-                            onClick={() => setIsFabMenuOpen(!isFabMenuOpen)}
-                            className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-110 focus:outline-none focus:ring-4 focus:ring-indigo-500/50"
-                            aria-haspopup="true"
-                            aria-expanded={isFabMenuOpen}
-                        >
-                            <PlusCircleIcon className={`h-9 w-9 transition-transform duration-300 ${isFabMenuOpen ? 'rotate-45' : ''}`} />
-                        </button>
-                    </div>
-                </div>
-            </main>
+        {isInstallBannerVisible && (
+            <InstallBanner onInstall={handleInstallClick} onDismiss={() => setIsInstallBannerVisible(false)} />
+        )}
+        
+        <div className="flex justify-center mb-6">
+            <div className="bg-slate-200 dark:bg-slate-700/50 p-1 rounded-xl flex space-x-1 shadow-inner">
+                <button onClick={() => setView('list')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${view === 'list' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-300/50 dark:hover:bg-slate-600/50'}`}>
+                    <ListBulletIcon className="w-5 h-5 inline-block mr-1"/> Lista
+                </button>
+                <button onClick={() => setView('calendar')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${view === 'calendar' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-300/50 dark:hover:bg-slate-600/50'}`}>
+                    <CalendarDaysIcon className="w-5 h-5 inline-block mr-1"/> Calendario
+                </button>
+                <button onClick={() => setView('costs')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${view === 'costs' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-300/50 dark:hover:bg-slate-600/50'}`}>
+                    <CalculatorIcon className="w-5 h-5 inline-block mr-1"/> Costos
+                </button>
+            </div>
         </div>
-    );
+
+        {view === 'list' && (
+            <>
+                {nextTrip && nextTripFlight && listFilter === 'future' && (
+                    <NextTripCard flight={nextTripFlight} flightType={nextTripFlightType} />
+                )}
+
+                <div className="flex overflow-x-auto space-x-2 pb-4 mb-2 scrollbar-hide">
+                    {filterOptions.map(option => (
+                        <button
+                            key={option.key}
+                            onClick={() => setListFilter(option.key)}
+                            className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${listFilter === option.key ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
+
+                <TripList 
+                    trips={filteredTrips} 
+                    onDeleteTrip={onDeleteTrip} 
+                    onSplitTrip={handleSplitTrip}
+                    listFilter={listFilter}
+                    nextTripId={nextTrip?.id || null}
+                    userId={user.uid}
+                    groupingState={groupingState}
+                    onStartGrouping={onStartGrouping}
+                    onConfirmGrouping={onConfirmGrouping}
+                />
+            </>
+        )}
+
+        {view === 'calendar' && <CalendarView trips={trips} />}
+        {view === 'costs' && <CostSummary trips={trips} />}
+
+        {/* Floating Action Button (FAB) */}
+        <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end space-y-3">
+             {isFabMenuOpen && (
+                <>
+                    <button 
+                        onClick={() => { setIsQuickAddModalOpen(true); setIsFabMenuOpen(false); }}
+                        className="flex items-center space-x-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 transition-transform hover:scale-105"
+                    >
+                        <PencilSquareIcon className="w-5 h-5 text-sky-500" />
+                        <span className="font-semibold text-sm">Manual</span>
+                    </button>
+                    <button 
+                        onClick={() => { setIsModalOpen(true); setIsFabMenuOpen(false); }}
+                        className="flex items-center space-x-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 transition-transform hover:scale-105"
+                    >
+                        <MailIcon className="w-5 h-5 text-indigo-500" />
+                        <span className="font-semibold text-sm">Importar Email</span>
+                    </button>
+                </>
+             )}
+             <button
+                onClick={() => setIsFabMenuOpen(!isFabMenuOpen)}
+                className={`p-4 rounded-full shadow-2xl text-white transition-transform duration-300 ${isFabMenuOpen ? 'bg-slate-600 rotate-45' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:scale-110'}`}
+                aria-label="Agregar viaje"
+             >
+                <PlusCircleIcon className="h-8 w-8" />
+             </button>
+        </div>
+
+        {isModalOpen && (
+          <EmailImporter 
+            onClose={() => setIsModalOpen(false)} 
+            onAddTrip={onAddTrip} 
+            apiKey={apiKey}
+            onInvalidApiKey={() => setApiKey('')}
+          />
+        )}
+        
+        {isQuickAddModalOpen && (
+            <QuickAddModal onClose={() => setIsQuickAddModalOpen(false)} onAddTrip={onAddTrip} />
+        )}
+       </div>
+    </div>
+  );
 };
 
 export default App;
