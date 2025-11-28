@@ -1,3 +1,4 @@
+
 export interface Flight {
   flightNumber: string | null;
   airline: string | null;
@@ -18,7 +19,6 @@ export interface Trip {
   purchaseDate?: string;
   departureFlight: Flight | null;
   returnFlight: Flight | null;
-  manualSplit?: boolean;
 }
 
 export interface BoardingPassData {

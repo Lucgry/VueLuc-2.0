@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { Trip, Flight } from './types';
 import Header from './components/Header';
@@ -250,7 +251,6 @@ const App: React.FC = () => {
       const updatedData: Partial<Omit<Trip, 'id' | 'createdAt'>> = {
         departureFlight: idaTrip.departureFlight,
         returnFlight: vueltaTrip.returnFlight,
-        manualSplit: false // Clear the flag if user manually groups them
       };
 
       if (idaTrip.purchaseDate && vueltaTrip.purchaseDate) {
@@ -289,7 +289,6 @@ const App: React.FC = () => {
 
       try {
           // 1. Create new trip for the return flight (Vuelta)
-          // Mark it as manually split so auto-grouper ignores it
           const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
           
           // Ensure no undefined values are passed to Firestore
@@ -300,17 +299,15 @@ const App: React.FC = () => {
               returnFlight: trip.returnFlight,
               purchaseDate: purchaseDate, 
               createdAt: trip.createdAt || new Date().toISOString(),
-              manualSplit: true 
           });
           
           // 2. Move Boarding Pass if it exists (Vuelta pass on old trip -> Vuelta pass on new trip)
           await moveBoardingPass(user.uid, trip.id, newVueltaTripRef.id, 'vuelta');
 
-          // 3. Update original trip to remove return flight and mark as manually split
+          // 3. Update original trip to remove return flight
           const originalTripRef = doc(db, 'users', user.uid, 'trips', trip.id);
           await updateDoc(originalTripRef, {
               returnFlight: null,
-              manualSplit: true
           });
           
       } catch (error) {
@@ -349,9 +346,6 @@ const App: React.FC = () => {
               if (nextLegIndex < unpairedLegs.length && !unpairedLegs[nextLegIndex].paired) {
                   const nextLeg = unpairedLegs[nextLegIndex].trip;
                   const isVuelta = !!nextLeg.returnFlight;
-
-                  // SKIP if either trip was manually split by the user
-                  if (currentLeg.manualSplit || nextLeg.manualSplit) continue;
 
                   if (isVuelta) {
                       console.log(`Emparejando IDA ${currentLeg.id} con VUELTA ${nextLeg.id}`);
@@ -572,22 +566,47 @@ const App: React.FC = () => {
   const nextTripFlightType = nextTrip && nextTrip.departureFlight ? 'ida' : 'vuelta';
 
 
-  const filteredTrips = trips.filter(trip => {
-      const startDate = getTripStartDate(trip);
-      const endDate = getTripEndDate(trip);
-      const now = new Date();
+  // Explicitly type the useMemo results and variables to prevent 'never' inference
+  const filteredTrips = useMemo<Trip[]>(() => {
+      return trips.filter(trip => {
+          const startDate = getTripStartDate(trip);
+          const endDate = getTripEndDate(trip);
+          const now = new Date();
 
-      if (listFilter === 'future') {
-          return endDate && endDate >= now;
-      }
-      if (listFilter === 'completed') {
-          return endDate && endDate < now;
-      }
-      if (listFilter === 'currentMonth') {
-          return startDate && startDate.getMonth() === now.getMonth() && startDate.getFullYear() === now.getFullYear();
-      }
-      return true;
-  });
+          if (listFilter === 'future') {
+              return endDate && endDate >= now;
+          }
+          if (listFilter === 'completed') {
+              return endDate && endDate < now;
+          }
+          if (listFilter === 'currentMonth') {
+              return startDate && startDate.getMonth() === now.getMonth() && startDate.getFullYear() === now.getFullYear();
+          }
+          return true;
+      });
+  }, [trips, listFilter]);
+
+  const sortedTrips = useMemo<Trip[]>(() => {
+      return [...filteredTrips].sort((a, b) => {
+          const dateA = getTripStartDate(a);
+          const dateB = getTripStartDate(b);
+          
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          
+          // For completed trips, sort descending (newest first)
+          // For future trips, sort ascending (soonest first)
+          if (listFilter === 'completed') {
+              return dateB.getTime() - dateA.getTime();
+          }
+          return dateA.getTime() - dateB.getTime();
+      });
+  }, [filteredTrips, listFilter]);
+  
+  // Explicit nextTripInfo to ensure type safety
+  const nextTripInfo = useMemo<{ id: string | null }>(() => ({
+      id: nextTrip ? nextTrip.id : null
+  }), [nextTrip]);
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${theme === 'dark' ? 'dark' : ''}`}>
@@ -613,16 +632,17 @@ const App: React.FC = () => {
             <InstallBanner onInstall={handleInstallClick} onDismiss={() => setIsInstallBannerVisible(false)} />
         )}
         
+        {/* Navigation - Segmented Control */}
         <div className="flex justify-center mb-6">
-            <div className="bg-slate-200 dark:bg-slate-700/50 p-1 rounded-xl flex space-x-1 shadow-inner">
-                <button onClick={() => setView('list')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${view === 'list' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-300/50 dark:hover:bg-slate-600/50'}`}>
-                    <ListBulletIcon className="w-5 h-5 inline-block mr-1"/> Lista
+            <div className="bg-slate-200 dark:bg-slate-700/50 p-1 rounded-xl grid grid-cols-3 gap-1 w-full max-w-md shadow-inner">
+                <button onClick={() => setView('list')} className={`flex items-center justify-center py-2 rounded-lg text-sm font-semibold transition-all ${view === 'list' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-300/50 dark:hover:bg-slate-600/50'}`}>
+                    <ListBulletIcon className="w-5 h-5 mr-1.5"/> Lista
                 </button>
-                <button onClick={() => setView('calendar')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${view === 'calendar' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-300/50 dark:hover:bg-slate-600/50'}`}>
-                    <CalendarDaysIcon className="w-5 h-5 inline-block mr-1"/> Calendario
+                <button onClick={() => setView('calendar')} className={`flex items-center justify-center py-2 rounded-lg text-sm font-semibold transition-all ${view === 'calendar' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-300/50 dark:hover:bg-slate-600/50'}`}>
+                    <CalendarDaysIcon className="w-5 h-5 mr-1.5"/> Calendario
                 </button>
-                <button onClick={() => setView('costs')} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${view === 'costs' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-300/50 dark:hover:bg-slate-600/50'}`}>
-                    <CalculatorIcon className="w-5 h-5 inline-block mr-1"/> Costos
+                <button onClick={() => setView('costs')} className={`flex items-center justify-center py-2 rounded-lg text-sm font-semibold transition-all ${view === 'costs' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-300/50 dark:hover:bg-slate-600/50'}`}>
+                    <CalculatorIcon className="w-5 h-5 mr-1.5"/> Costos
                 </button>
             </div>
         </div>
@@ -632,13 +652,14 @@ const App: React.FC = () => {
                 {nextTrip && nextTripFlight && listFilter === 'future' && (
                     <NextTripCard flight={nextTripFlight} flightType={nextTripFlightType} />
                 )}
-
-                <div className="flex overflow-x-auto space-x-2 pb-4 mb-2 scrollbar-hide">
+                
+                {/* Filter Chips - Horizontal Scroll */}
+                <div className="flex overflow-x-auto space-x-2 pb-2 mb-4 scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
                     {filterOptions.map(option => (
                         <button
                             key={option.key}
                             onClick={() => setListFilter(option.key)}
-                            className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${listFilter === option.key ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
+                            className={`flex-shrink-0 whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-all border ${listFilter === option.key ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-transparent border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                         >
                             {option.label}
                         </button>
@@ -646,11 +667,11 @@ const App: React.FC = () => {
                 </div>
 
                 <TripList 
-                    trips={filteredTrips} 
+                    trips={sortedTrips} 
                     onDeleteTrip={onDeleteTrip} 
                     onSplitTrip={handleSplitTrip}
                     listFilter={listFilter}
-                    nextTripId={nextTrip?.id || null}
+                    nextTripId={nextTripInfo.id}
                     userId={user.uid}
                     groupingState={groupingState}
                     onStartGrouping={onStartGrouping}
