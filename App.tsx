@@ -478,7 +478,7 @@ const App: React.FC = () => {
   };
 
   const onAddTrip = async (tripData: Omit<Trip, 'id' | 'createdAt'>) => {
-      if (!user) return;
+      if (!user || !db) return;
       const tripsCollectionRef = collection(db, 'users', user.uid, 'trips');
       await addDoc(tripsCollectionRef, {
           ...tripData,
