@@ -14,9 +14,36 @@ const jsonResponse = (statusCode, obj) => ({
 const safeJsonParse = (str) => {
   try {
     return { ok: true, value: JSON.parse(str) };
-  } catch {
-    return { ok: false };
+  } catch (e) {
+    return { ok: false, error: e };
   }
+};
+
+// Extrae el PRIMER bloque JSON válido { ... } de un texto
+const extractFirstJsonObject = (text) => {
+  if (typeof text !== "string") return null;
+
+  // Quitar fences tipo ```json
+  const cleaned = text
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
+  const firstBrace = cleaned.indexOf("{");
+  if (firstBrace === -1) return null;
+
+  let depth = 0;
+  for (let i = firstBrace; i < cleaned.length; i++) {
+    const char = cleaned[i];
+    if (char === "{") depth++;
+    if (char === "}") depth--;
+
+    if (depth === 0) {
+      return cleaned.slice(firstBrace, i + 1);
+    }
+  }
+
+  return null;
 };
 
 async function listModels(apiKey) {
@@ -40,7 +67,7 @@ exports.handler = async (event) => {
     });
   }
 
-  // Diagnóstico: listar modelos
+  // Diagnóstico opcional
   if (
     event.httpMethod === "GET" &&
     event.queryStringParameters?.listModels === "1"
@@ -86,7 +113,8 @@ DATOS DEL PDF ADJUNTO:
 
   const instructions = `
 Eres un asistente de extracción de datos de vuelos.
-Devuelve ÚNICAMENTE JSON válido (sin markdown, sin texto adicional).
+Devuelve ÚNICAMENTE JSON válido.
+NO markdown. NO texto adicional.
 
 ${pdfInstruction}
 
@@ -126,7 +154,6 @@ ${emailText}
 `.trim();
 
   try {
-    // ✅ Modelo correcto según tu ListModels
     const model = "gemini-2.5-flash";
 
     const resp = await fetch(
@@ -161,49 +188,54 @@ ${emailText}
       }
     );
 
-    const text = await resp.text();
+    const rawText = await resp.text();
 
     if (!resp.ok) {
       return jsonResponse(resp.status, {
         error: "Gemini API error",
         modelUsed: model,
-        details: text.slice(0, 2000),
+        details: rawText.slice(0, 2000),
       });
     }
 
-    // 1) Parsear la respuesta completa de Gemini
-    const parsedGemini = safeJsonParse(text);
-    if (!parsedGemini.ok) {
+    // 1) Parse wrapper Gemini
+    const wrapper = safeJsonParse(rawText);
+    if (!wrapper.ok) {
       return jsonResponse(502, {
-        error: "Gemini returned invalid JSON (wrapper)",
-        modelUsed: model,
-        details: text.slice(0, 500),
+        error: "Gemini wrapper is not valid JSON",
+        details: rawText.slice(0, 800),
       });
     }
 
-    // 2) Extraer el texto que contiene el JSON “final”
+    // 2) Extraer texto del modelo
     const candidateText =
-      parsedGemini.value?.candidates?.[0]?.content?.parts?.[0]?.text;
+      wrapper.value?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    if (!candidateText || typeof candidateText !== "string") {
+    if (!candidateText) {
       return jsonResponse(502, {
         error: "Gemini response missing content text",
-        modelUsed: model,
-        details: JSON.stringify(parsedGemini.value).slice(0, 800),
+        details: JSON.stringify(wrapper.value).slice(0, 800),
       });
     }
 
-    // 3) Parsear ese JSON final
-    const finalJson = safeJsonParse(candidateText);
-    if (!finalJson.ok) {
+    // 3) Extraer JSON real
+    const jsonBlock = extractFirstJsonObject(candidateText);
+    if (!jsonBlock) {
       return jsonResponse(502, {
-        error: "Gemini content is not valid JSON",
-        modelUsed: model,
+        error: "No JSON object found in Gemini content",
         details: candidateText.slice(0, 800),
       });
     }
 
-    // 4) Devolver SOLO el JSON final (lo que tu app espera)
+    // 4) Parse final
+    const finalJson = safeJsonParse(jsonBlock);
+    if (!finalJson.ok) {
+      return jsonResponse(502, {
+        error: "Extracted JSON is invalid",
+        details: jsonBlock.slice(0, 800),
+      });
+    }
+
     return jsonResponse(200, finalJson.value);
   } catch (err) {
     return jsonResponse(500, {
