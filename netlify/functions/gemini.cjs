@@ -29,7 +29,7 @@ exports.handler = async (event) => {
     return jsonResponse(405, { error: "Method Not Allowed. Use POST." });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     return jsonResponse(500, {
       error: "GEMINI_API_KEY not set in Netlify env vars",
