@@ -1,46 +1,10 @@
-import { GoogleGenAI, Type } from "@google/genai";
+// netlify/functions/gemini.ts
 
-const flightSchema = {
-  type: Type.OBJECT,
-  properties: {
-    flightNumber: { type: Type.STRING },
-    airline: { type: Type.STRING },
-    departureAirportCode: { type: Type.STRING },
-    departureCity: { type: Type.STRING },
-    arrivalAirportCode: { type: Type.STRING },
-    arrivalCity: { type: Type.STRING },
-    departureDateTime: { type: Type.STRING },
-    arrivalDateTime: { type: Type.STRING },
-    cost: { type: Type.NUMBER },
-    paymentMethod: { type: Type.STRING },
-    bookingReference: { type: Type.STRING },
-  },
-  required: [
-    "flightNumber",
-    "departureAirportCode",
-    "arrivalAirportCode",
-    "departureDateTime",
-    "arrivalDateTime",
-    "bookingReference",
-  ],
-};
-
-const tripSchema = {
-  type: Type.OBJECT,
-  properties: {
-    flights: { type: Type.ARRAY, items: flightSchema },
-    purchaseDate: { type: Type.STRING },
-  },
-  required: ["flights", "purchaseDate"],
-};
-
-function jsonResponse(statusCode, obj) {
+function jsonResponse(statusCode: number, obj: any) {
   return {
     statusCode,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      // Si tu frontend llama desde el mismo dominio Netlify, esto no es estrictamente necesario,
-      // pero no molesta y evita problemas si probás desde otros orígenes.
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Headers": "Content-Type",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -49,7 +13,7 @@ function jsonResponse(statusCode, obj) {
   };
 }
 
-function safeJsonParse(str) {
+function safeJsonParse(str: string) {
   try {
     return { ok: true, value: JSON.parse(str) };
   } catch (e) {
@@ -57,8 +21,8 @@ function safeJsonParse(str) {
   }
 }
 
-export async function handler(event) {
-  // Preflight (por si el browser lo dispara)
+export async function handler(event: any) {
+  // Preflight CORS
   if (event.httpMethod === "OPTIONS") {
     return jsonResponse(200, { ok: true });
   }
@@ -67,10 +31,10 @@ export async function handler(event) {
     return jsonResponse(405, { error: "Method Not Allowed. Use POST." });
   }
 
-  const apiKey = process.env.GOOGLE_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return jsonResponse(500, {
-      error: "GOOGLE_API_KEY not set in Netlify env vars",
+      error: "GEMINI_API_KEY not set in Netlify environment variables",
     });
   }
 
@@ -80,7 +44,7 @@ export async function handler(event) {
   if (!parsed.ok) {
     return jsonResponse(400, {
       error: "Invalid JSON body",
-      details: "Body must be valid JSON.",
+      details: "Body must be valid JSON",
     });
   }
 
@@ -90,7 +54,6 @@ export async function handler(event) {
     return jsonResponse(400, { error: "emailText is required" });
   }
 
-  // Normalizar pdfBase64
   const pdfData =
     typeof pdfBase64 === "string" && pdfBase64.trim().length > 0
       ? pdfBase64.trim()
@@ -104,75 +67,111 @@ DATOS DEL PDF ADJUNTO:
 `.trim()
     : "";
 
+  // 🔒 Instrucciones estrictas + esquema en texto
   const instructions = `
-Eres un asistente de extracción de datos de vuelos. Convierte un email de vuelo a JSON según el esquema.
+Eres un asistente de extracción de datos de vuelos.
+Devuelve ÚNICAMENTE JSON válido (sin markdown, sin texto adicional).
 
 ${pdfInstruction}
 
-REGLAS ESTRICTAS:
-1) Extrae CADA VUELO en 'flights' y cada uno con su 'bookingReference'.
-2) NO INVENTES VUELOS.
-3) COSTO: si hay desglose por tramo, asigna cada costo. Si solo hay total, asígnalo al PRIMER vuelo.
-4) purchaseDate: busca fecha de compra/emisión. Si no aparece, usa la salida del primer vuelo como fallback.
+ESQUEMA OBLIGATORIO:
+{
+  "flights": [
+    {
+      "flightNumber": "string",
+      "airline": "string",
+      "departureAirportCode": "string",
+      "departureCity": "string",
+      "arrivalAirportCode": "string",
+      "arrivalCity": "string",
+      "departureDateTime": "YYYY-MM-DDTHH:mm:ss",
+      "arrivalDateTime": "YYYY-MM-DDTHH:mm:ss",
+      "cost": number,
+      "paymentMethod": "string",
+      "bookingReference": "string"
+    }
+  ],
+  "purchaseDate": "YYYY-MM-DDTHH:mm:ss"
+}
 
-FORMATO FECHA:
-- ISO 8601: 'YYYY-MM-DDTHH:mm:ss'
-- Si no hay año, deduce el año futuro más próximo.
+REGLAS ESTRICTAS:
+1) Extrae CADA VUELO en "flights".
+2) NO INVENTES DATOS.
+3) bookingReference es OBLIGATORIO.
+4) COSTO:
+   - Si hay desglose por tramo, asigna cada costo.
+   - Si solo hay un total, asignalo al PRIMER vuelo.
+5) purchaseDate:
+   - Usá fecha de compra/emisión.
+   - Si no existe, usá la salida del primer vuelo.
+6) Fechas en ISO 8601.
+7) Si falta el año, deducí el año futuro más próximo.
+`.trim();
+
+  const prompt = `
+${instructions}
+
+TEXTO DEL EMAIL:
+---
+${emailText}
+---
 `.trim();
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: prompt },
+                ...(pdfData
+                  ? [
+                      {
+                        inlineData: {
+                          mimeType: "application/pdf",
+                          data: pdfData,
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0,
+            maxOutputTokens: 2048,
+          },
+        }),
+      }
+    );
 
-    /** IMPORTANTE:
-     * En @google/genai, `contents` debe ser un ARRAY de "Content",
-     * típicamente: [{ role: "user", parts: [...] }]
-     * Esto evita el error 400 "contents is not specified".
-     */
-    const parts = [
-      { text: instructions },
-      { text: `Texto del correo a analizar:\n---\n${emailText}\n---` },
-    ];
+    const text = await response.text();
 
-    if (pdfData) {
-      parts.push({
-        inlineData: { mimeType: "application/pdf", data: pdfData },
+    if (!response.ok) {
+      return jsonResponse(response.status, {
+        error: "Gemini API error",
+        details: text.slice(0, 2000),
       });
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: tripSchema,
-      },
+    const parsedGemini = safeJsonParse(text);
+    if (!parsedGemini.ok) {
+      return jsonResponse(502, {
+        error: "Gemini returned invalid JSON",
+        details: text.slice(0, 500),
+      });
+    }
+
+    return jsonResponse(200, parsedGemini.value);
+  } catch (err: any) {
+    return jsonResponse(500, {
+      error: "Function crashed",
+      message: err?.message || String(err),
     });
-
-    const parsedText = (response?.text || "").trim();
-    if (!parsedText) {
-      return jsonResponse(502, {
-        error: "Empty response from Gemini",
-      });
-    }
-
-    let json;
-    try {
-      json = JSON.parse(parsedText);
-    } catch {
-      // Si por alguna razón no devolvió JSON válido
-      return jsonResponse(502, {
-        error: "Gemini returned non-JSON output",
-        details: parsedText.slice(0, 500),
-      });
-    }
-
-    return jsonResponse(200, json);
-  } catch (err) {
-    // No loguees emailText/pdfBase64 aquí (para no filtrar datos).
-    const message = err?.message || String(err);
-
-    // Propagar errores de Gemini con status útil
-    // (si querés más fino, podés inspeccionar err.status / err.code)
-    return jsonResponse(500, { error: message });
   }
 }
