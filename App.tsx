@@ -22,12 +22,7 @@ import { MailIcon } from "./components/icons/MailIcon";
 import { InformationCircleIcon } from "./components/icons/InformationCircleIcon";
 import { ClockIcon } from "./components/icons/ClockIcon";
 
-import {
-  getBoardingPass,
-  saveBoardingPass,
-  moveBoardingPass,
-  deleteBoardingPassesForTrip,
-} from "./services/db";
+import { deleteBoardingPassesForTrip } from "./services/db";
 
 import { onAuthStateChanged, User } from "firebase/auth";
 import {
@@ -45,7 +40,6 @@ import {
   onSnapshot,
   query,
   orderBy,
-  updateDoc,
 } from "firebase/firestore";
 
 /* ------------------------------------------------------------------ */
@@ -115,7 +109,9 @@ const AuthErrorScreen: React.FC<{
     <div className="max-w-xl w-full bg-slate-100 dark:bg-slate-800 p-6 rounded-xl shadow">
       <InformationCircleIcon className="w-10 h-10 mx-auto text-red-500" />
       <h1 className="mt-4 text-2xl font-bold">Error de Autenticación</h1>
-      {error.message && <p className="mt-2 text-sm opacity-80">{error.message}</p>}
+      {error.message && (
+        <p className="mt-2 text-sm opacity-80">{error.message}</p>
+      )}
 
       {error.links && (
         <div className="mt-6 space-y-3">
@@ -177,6 +173,7 @@ const App: React.FC = () => {
   const [isInstallBannerVisible, setIsInstallBannerVisible] =
     useState(false);
 
+  // refs (por si más adelante reactivás features)
   const processingRef = useRef(false);
   const duplicateCleanupRun = useRef(false);
 
@@ -187,6 +184,7 @@ const App: React.FC = () => {
 
     const unsub = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+
       try {
         if (currentUser) await currentUser.getIdToken(true);
         setAuthRuntimeError(null);
@@ -259,7 +257,7 @@ const App: React.FC = () => {
     });
   };
 
-  /* -------------------- PWA install prompt (no rompe si no se usa) -------------------- */
+  /* -------------------- PWA install prompt -------------------- */
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -279,11 +277,12 @@ const App: React.FC = () => {
     setInstallPromptEvent(null);
   };
 
-  /* -------------------- actions mínimas para que TripList compile -------------------- */
+  /* -------------------- actions -------------------- */
 
   const onDeleteTrip = async (tripId: string) => {
     if (!user || !db) return;
-    if (!window.confirm("¿Estás seguro de que deseas eliminar este viaje?")) return;
+    if (!window.confirm("¿Estás seguro de que deseas eliminar este viaje?"))
+      return;
 
     await deleteDoc(doc(db, "users", user.uid, "trips", tripId));
     await deleteBoardingPassesForTrip(user.uid, tripId);
@@ -291,14 +290,69 @@ const App: React.FC = () => {
 
   const onAddTrip = async (tripData: Omit<Trip, "id" | "createdAt">) => {
     if (!user || !db) return;
+
     await addDoc(collection(db, "users", user.uid, "trips"), {
       ...tripData,
       createdAt: new Date().toISOString(),
       purchaseDate: tripData.purchaseDate || new Date().toISOString(),
     });
+
     setIsModalOpen(false);
     setIsQuickAddModalOpen(false);
   };
+
+  /* ------------------------------------------------------------------ */
+  /* IMPORTANT: useMemo SIEMPRE ANTES de cualquier return condicional     */
+  /* ------------------------------------------------------------------ */
+
+  const futureTrips = useMemo(() => {
+    if (!trips?.length) return [];
+    const now = new Date();
+
+    return [...trips]
+      .filter((t) => {
+        const end = getTripEndDate(t);
+        return !!end && end > now;
+      })
+      .sort((a, b) => {
+        const sa = getTripStartDate(a)?.getTime() || 0;
+        const sb = getTripStartDate(b)?.getTime() || 0;
+        return sa - sb;
+      });
+  }, [trips]);
+
+  const nextTrip = futureTrips[0] ?? null;
+
+  const nextTripFlight = useMemo(() => {
+    if (!nextTrip) return null;
+    return nextTrip.departureFlight || nextTrip.returnFlight || null;
+  }, [nextTrip]);
+
+  const nextTripFlightType = useMemo<"ida" | "vuelta">(() => {
+    if (!nextTrip) return "ida";
+    return nextTrip.departureFlight ? "ida" : "vuelta";
+  }, [nextTrip]);
+
+  const filteredTrips = useMemo(() => {
+    if (!trips?.length) return [];
+    const now = new Date();
+
+    return trips.filter((t) => {
+      const s = getTripStartDate(t);
+      const e = getTripEndDate(t);
+
+      if (listFilter === "future") return !!e && e >= now;
+      if (listFilter === "completed") return !!e && e < now;
+      if (listFilter === "currentMonth")
+        return (
+          !!s &&
+          s.getMonth() === now.getMonth() &&
+          s.getFullYear() === now.getFullYear()
+        );
+
+      return true;
+    });
+  }, [trips, listFilter]);
 
   /* -------------------- render guards (DESPUÉS de hooks) -------------------- */
 
@@ -316,45 +370,6 @@ const App: React.FC = () => {
   if (loadingAuth) return <FullScreenLoader />;
   if (authRuntimeError) return <AuthErrorScreen error={authRuntimeError} />;
   if (!user) return <LoginScreen />;
-
-  /* -------------------- derived data -------------------- */
-
-  const futureTrips = useMemo(
-    () =>
-      [...trips]
-        .filter((t) => {
-          const end = getTripEndDate(t);
-          return end && end > new Date();
-        })
-        .sort((a, b) => {
-          const sa = getTripStartDate(a)?.getTime() || 0;
-          const sb = getTripStartDate(b)?.getTime() || 0;
-          return sa - sb;
-        }),
-    [trips]
-  );
-
-  const nextTrip = futureTrips[0];
-  const nextTripFlight =
-    nextTrip?.departureFlight || nextTrip?.returnFlight || null;
-  const nextTripFlightType = nextTrip?.departureFlight ? "ida" : "vuelta";
-
-  const filteredTrips = useMemo(() => {
-    const now = new Date();
-    return trips.filter((t) => {
-      const s = getTripStartDate(t);
-      const e = getTripEndDate(t);
-      if (listFilter === "future") return e && e >= now;
-      if (listFilter === "completed") return e && e < now;
-      if (listFilter === "currentMonth")
-        return (
-          s &&
-          s.getMonth() === now.getMonth() &&
-          s.getFullYear() === now.getFullYear()
-        );
-      return true;
-    });
-  }, [trips, listFilter]);
 
   /* -------------------- UI -------------------- */
 
@@ -380,8 +395,6 @@ const App: React.FC = () => {
 
         {isInstallBannerVisible && (
           <div className="mb-4">
-            {/* Si tu componente InstallBanner existe y querés usarlo, descomentá abajo */}
-            {/* <InstallBanner onInstall={handleInstallClick} onDismiss={() => setIsInstallBannerVisible(false)} /> */}
             <button
               onClick={handleInstallClick}
               className="px-4 py-2 rounded bg-slate-200 dark:bg-slate-700"
@@ -403,9 +416,7 @@ const App: React.FC = () => {
             <button
               onClick={() => setView("list")}
               className={`py-2 rounded-lg text-sm font-semibold ${
-                view === "list"
-                  ? "bg-white dark:bg-slate-800"
-                  : "opacity-80"
+                view === "list" ? "bg-white dark:bg-slate-800" : "opacity-80"
               }`}
             >
               <span className="inline-flex items-center justify-center">
@@ -427,9 +438,7 @@ const App: React.FC = () => {
             <button
               onClick={() => setView("costs")}
               className={`py-2 rounded-lg text-sm font-semibold ${
-                view === "costs"
-                  ? "bg-white dark:bg-slate-800"
-                  : "opacity-80"
+                view === "costs" ? "bg-white dark:bg-slate-800" : "opacity-80"
               }`}
             >
               <span className="inline-flex items-center justify-center">
@@ -468,7 +477,6 @@ const App: React.FC = () => {
             <TripList
               trips={filteredTrips}
               onDeleteTrip={onDeleteTrip}
-              // si tu TripList requiere esta prop, la dejamos como no-op por ahora
               onSplitTrip={async () => {}}
               listFilter={listFilter}
               nextTripId={nextTrip?.id || null}
@@ -528,8 +536,6 @@ const App: React.FC = () => {
           <EmailImporter
             onClose={() => setIsModalOpen(false)}
             onAddTrip={onAddTrip}
-            // NECESARIO para que compile: EmailImporterProps exige estas props
-            // y ya no usamos key en frontend (Gemini corre en Netlify Function).
             apiKey={""}
             onInvalidApiKey={() => {}}
           />
