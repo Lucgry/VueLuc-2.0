@@ -126,7 +126,7 @@ ${emailText}
 `.trim();
 
   try {
-    // ✅ Modelo correcto según tu ListModels:
+    // ✅ Modelo correcto según tu ListModels
     const model = "gemini-2.5-flash";
 
     const resp = await fetch(
@@ -171,16 +171,40 @@ ${emailText}
       });
     }
 
+    // 1) Parsear la respuesta completa de Gemini
     const parsedGemini = safeJsonParse(text);
     if (!parsedGemini.ok) {
       return jsonResponse(502, {
-        error: "Gemini returned invalid JSON",
+        error: "Gemini returned invalid JSON (wrapper)",
         modelUsed: model,
         details: text.slice(0, 500),
       });
     }
 
-    return jsonResponse(200, parsedGemini.value);
+    // 2) Extraer el texto que contiene el JSON “final”
+    const candidateText =
+      parsedGemini.value?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!candidateText || typeof candidateText !== "string") {
+      return jsonResponse(502, {
+        error: "Gemini response missing content text",
+        modelUsed: model,
+        details: JSON.stringify(parsedGemini.value).slice(0, 800),
+      });
+    }
+
+    // 3) Parsear ese JSON final
+    const finalJson = safeJsonParse(candidateText);
+    if (!finalJson.ok) {
+      return jsonResponse(502, {
+        error: "Gemini content is not valid JSON",
+        modelUsed: model,
+        details: candidateText.slice(0, 800),
+      });
+    }
+
+    // 4) Devolver SOLO el JSON final (lo que tu app espera)
+    return jsonResponse(200, finalJson.value);
   } catch (err) {
     return jsonResponse(500, {
       error: "Function crashed",
