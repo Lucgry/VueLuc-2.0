@@ -29,38 +29,15 @@ function scorePair(outbound: Flight, inbound: Flight): number {
 
   const diffDays = daysBetween(outDate, inDate);
 
-  let score = 0;
-
-  // Ventanas temporales acordadas
-  if (diffDays >= 1 && diffDays <= 5) score += 100;
-  else if (diffDays >= 6 && diffDays <= 15) score += 50;
-  else if (diffDays >= 16 && diffDays <= 45) score += 20;
-  else return -Infinity;
-
-  // Bonus si coincide bookingReference (si existe)
-  if (
-    outbound.bookingReference &&
-    inbound.bookingReference &&
-    outbound.bookingReference === inbound.bookingReference
-  ) {
-    score += 30;
-  }
-
-  return score;
+  if (diffDays >= 1 && diffDays <= 5) return 100;
+  if (diffDays >= 6 && diffDays <= 15) return 50;
+  if (diffDays >= 16 && diffDays <= 45) return 20;
+  return -Infinity;
 }
-
-type Match = { index: number; score: number; flight: Flight };
 
 export function groupFlightsIntoTrips(flights: Flight[]): TripGroup[] {
   const remaining = [...flights];
   const trips: TripGroup[] = [];
-
-  // Normalizar códigos de forma segura (sin asumir non-null)
-  remaining.forEach((f) => {
-    // Si tus tipos son readonly, quitá estas 2 líneas y usá variables locales.
-    (f as any).departureAirportCode = toUpperSafe(f.departureAirportCode);
-    (f as any).arrivalAirportCode = toUpperSafe(f.arrivalAirportCode);
-  });
 
   while (remaining.length > 0) {
     const outbound = remaining.shift()!;
@@ -68,38 +45,50 @@ export function groupFlightsIntoTrips(flights: Flight[]): TripGroup[] {
     const outArr = toUpperSafe(outbound.arrivalAirportCode);
     const outDate = parseDateSafe(outbound.departureDateTime);
 
-    // Si no tenemos datos mínimos, no intentamos emparejar: queda one-way
+    // Si falta info mínima, queda one-way
     if (!outDep || !outArr || !outDate) {
       trips.push({ outbound });
       continue;
     }
 
-    let bestMatch: Match | null = null;
+    let bestIndex: number | null = null;
+    let bestScore = -Infinity;
 
-    remaining.forEach((candidate, index) => {
+    for (let i = 0; i < remaining.length; i++) {
+      const candidate = remaining[i];
+
       const candDep = toUpperSafe(candidate.departureAirportCode);
       const candArr = toUpperSafe(candidate.arrivalAirportCode);
       const candDate = parseDateSafe(candidate.departureDateTime);
 
-      if (!candDep || !candArr || !candDate) return;
+      if (!candDep || !candArr || !candDate) continue;
 
-      // Aeropuertos invertidos (condición obligatoria)
-      if (outDep !== candArr || outArr !== candDep) return;
+      // Aeropuertos invertidos
+      if (outDep !== candArr || outArr !== candDep) continue;
 
-      // Vuelta debe ser posterior
-      if (candDate <= outDate) return;
+      // Vuelta posterior
+      if (candDate <= outDate) continue;
 
-      const score = scorePair(outbound, candidate);
-      if (score === -Infinity) return;
+      let score = scorePair(outbound, candidate);
 
-      if (!bestMatch || score > bestMatch.score) {
-        bestMatch = { index, score, flight: candidate };
+      // Bonus bookingReference (si existe)
+      if (
+        outbound.bookingReference &&
+        candidate.bookingReference &&
+        outbound.bookingReference === candidate.bookingReference
+      ) {
+        score += 30;
       }
-    });
 
-    if (bestMatch) {
-      remaining.splice(bestMatch.index, 1);
-      trips.push({ outbound, inbound: bestMatch.flight });
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+
+    if (bestIndex !== null) {
+      const inbound = remaining.splice(bestIndex, 1)[0];
+      trips.push({ outbound, inbound });
     } else {
       trips.push({ outbound });
     }
