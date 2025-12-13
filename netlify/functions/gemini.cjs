@@ -14,8 +14,8 @@ const jsonResponse = (statusCode, obj) => ({
 const safeJsonParse = (str) => {
   try {
     return { ok: true, value: JSON.parse(str) };
-  } catch (e) {
-    return { ok: false, error: e };
+  } catch {
+    return { ok: false };
   }
 };
 
@@ -32,15 +32,13 @@ exports.handler = async (event) => {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     return jsonResponse(500, {
-      error: "GEMINI_API_KEY not set in Netlify env vars",
+      error: "GOOGLE_API_KEY not set in Netlify env vars",
     });
   }
 
   const parsed = safeJsonParse(event.body || "{}");
   if (!parsed.ok) {
-    return jsonResponse(400, {
-      error: "Invalid JSON body",
-    });
+    return jsonResponse(400, { error: "Invalid JSON body" });
   }
 
   const { emailText, pdfBase64 } = parsed.value;
@@ -105,7 +103,7 @@ ${emailText}
 
   try {
     const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
