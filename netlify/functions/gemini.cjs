@@ -1,27 +1,25 @@
-// netlify/functions/gemini.ts
+// netlify/functions/gemini.cjs
 
-function jsonResponse(statusCode: number, obj: any) {
-  return {
-    statusCode,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-    },
-    body: JSON.stringify(obj),
-  };
-}
+const jsonResponse = (statusCode, obj) => ({
+  statusCode,
+  headers: {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  },
+  body: JSON.stringify(obj),
+});
 
-function safeJsonParse(str: string) {
+const safeJsonParse = (str) => {
   try {
     return { ok: true, value: JSON.parse(str) };
   } catch (e) {
     return { ok: false, error: e };
   }
-}
+};
 
-export async function handler(event: any) {
+exports.handler = async (event) => {
   // Preflight CORS
   if (event.httpMethod === "OPTIONS") {
     return jsonResponse(200, { ok: true });
@@ -34,28 +32,25 @@ export async function handler(event: any) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return jsonResponse(500, {
-      error: "GEMINI_API_KEY not set in Netlify environment variables",
+      error: "GEMINI_API_KEY not set in Netlify env vars",
     });
   }
 
-  // Parse body seguro
-  const rawBody = event.body || "{}";
-  const parsed = safeJsonParse(rawBody);
+  const parsed = safeJsonParse(event.body || "{}");
   if (!parsed.ok) {
     return jsonResponse(400, {
       error: "Invalid JSON body",
-      details: "Body must be valid JSON",
     });
   }
 
-  const { emailText, pdfBase64 } = parsed.value || {};
+  const { emailText, pdfBase64 } = parsed.value;
 
   if (!emailText || typeof emailText !== "string" || !emailText.trim()) {
     return jsonResponse(400, { error: "emailText is required" });
   }
 
   const pdfData =
-    typeof pdfBase64 === "string" && pdfBase64.trim().length > 0
+    typeof pdfBase64 === "string" && pdfBase64.trim()
       ? pdfBase64.trim()
       : null;
 
@@ -67,14 +62,13 @@ DATOS DEL PDF ADJUNTO:
 `.trim()
     : "";
 
-  // 🔒 Instrucciones estrictas + esquema en texto
   const instructions = `
 Eres un asistente de extracción de datos de vuelos.
 Devuelve ÚNICAMENTE JSON válido (sin markdown, sin texto adicional).
 
 ${pdfInstruction}
 
-ESQUEMA OBLIGATORIO:
+ESQUEMA:
 {
   "flights": [
     {
@@ -94,31 +88,23 @@ ESQUEMA OBLIGATORIO:
   "purchaseDate": "YYYY-MM-DDTHH:mm:ss"
 }
 
-REGLAS ESTRICTAS:
-1) Extrae CADA VUELO en "flights".
-2) NO INVENTES DATOS.
-3) bookingReference es OBLIGATORIO.
-4) COSTO:
-   - Si hay desglose por tramo, asigna cada costo.
-   - Si solo hay un total, asignalo al PRIMER vuelo.
-5) purchaseDate:
-   - Usá fecha de compra/emisión.
-   - Si no existe, usá la salida del primer vuelo.
-6) Fechas en ISO 8601.
-7) Si falta el año, deducí el año futuro más próximo.
+REGLAS:
+- NO inventes datos
+- bookingReference es obligatorio
+- Si hay costo total, asignalo al primer vuelo
 `.trim();
 
   const prompt = `
 ${instructions}
 
-TEXTO DEL EMAIL:
+EMAIL:
 ---
 ${emailText}
 ---
 `.trim();
 
   try {
-    const response = await fetch(
+    const resp = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
@@ -150,10 +136,10 @@ ${emailText}
       }
     );
 
-    const text = await response.text();
+    const text = await resp.text();
 
-    if (!response.ok) {
-      return jsonResponse(response.status, {
+    if (!resp.ok) {
+      return jsonResponse(resp.status, {
         error: "Gemini API error",
         details: text.slice(0, 2000),
       });
@@ -168,10 +154,10 @@ ${emailText}
     }
 
     return jsonResponse(200, parsedGemini.value);
-  } catch (err: any) {
+  } catch (err) {
     return jsonResponse(500, {
       error: "Function crashed",
-      message: err?.message || String(err),
+      message: err.message || String(err),
     });
   }
-}
+};
