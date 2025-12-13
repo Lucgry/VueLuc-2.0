@@ -1,10 +1,4 @@
-import React, {
-  useState,
-  useEffect,
-  useMemo,
-  useCallback,
-  useRef,
-} from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import type { Trip, Flight } from "./types";
 
 import Header from "./components/Header";
@@ -13,22 +7,20 @@ import EmailImporter from "./components/EmailImporter";
 import CostSummary from "./components/CostSummary";
 import CalendarView from "./components/CalendarView";
 import NextTripCard from "./components/NextTripCard";
-import InstallBanner from "./components/InstallBanner";
 import QuickAddModal from "./components/QuickAddModal";
 import AirportModeView from "./components/AirportModeView";
 import LoginScreen from "./components/LoginScreen";
 import { FullScreenLoader } from "./components/Spinner";
 
-import {
-  PlusCircleIcon,
-  ListBulletIcon,
-  CalendarDaysIcon,
-  CalculatorIcon,
-  PencilSquareIcon,
-  MailIcon,
-  InformationCircleIcon,
-  ClockIcon,
-} from "./components/icons";
+// IMPORTS INDIVIDUALES (evita error TS2307 en Netlify/Linux)
+import { PlusCircleIcon } from "./components/icons/PlusCircleIcon";
+import { ListBulletIcon } from "./components/icons/ListBulletIcon";
+import { CalendarDaysIcon } from "./components/icons/CalendarDaysIcon";
+import { CalculatorIcon } from "./components/icons/CalculatorIcon";
+import { PencilSquareIcon } from "./components/icons/PencilSquareIcon";
+import { MailIcon } from "./components/icons/MailIcon";
+import { InformationCircleIcon } from "./components/icons/InformationCircleIcon";
+import { ClockIcon } from "./components/icons/ClockIcon";
 
 import {
   getBoardingPass,
@@ -107,7 +99,9 @@ const getFlightFingerprint = (flight: Flight | null): string | null => {
   ) {
     return null;
   }
-  return `${flight.flightNumber.trim().toUpperCase()}-${flight.departureDateTime}-${flight.departureAirportCode}-${flight.arrivalAirportCode}`;
+  return `${flight.flightNumber
+    .trim()
+    .toUpperCase()}-${flight.departureDateTime}-${flight.departureAirportCode}-${flight.arrivalAirportCode}`;
 };
 
 /* ------------------------------------------------------------------ */
@@ -115,12 +109,13 @@ const getFlightFingerprint = (flight: Flight | null): string | null => {
 /* ------------------------------------------------------------------ */
 
 const AuthErrorScreen: React.FC<{
-  error: { links?: { url: string; text: string }[] };
+  error: { message?: string; links?: { url: string; text: string }[] };
 }> = ({ error }) => (
   <div className="flex flex-col items-center justify-center min-h-screen p-4 text-center">
     <div className="max-w-xl w-full bg-slate-100 dark:bg-slate-800 p-6 rounded-xl shadow">
       <InformationCircleIcon className="w-10 h-10 mx-auto text-red-500" />
       <h1 className="mt-4 text-2xl font-bold">Error de Autenticación</h1>
+      {error.message && <p className="mt-2 text-sm opacity-80">{error.message}</p>}
 
       {error.links && (
         <div className="mt-6 space-y-3">
@@ -196,7 +191,26 @@ const App: React.FC = () => {
         if (currentUser) await currentUser.getIdToken(true);
         setAuthRuntimeError(null);
       } catch (e: any) {
-        setAuthRuntimeError({ message: e?.message || "Auth error" });
+        const msg = e?.message || "Auth error";
+        const isHttpError =
+          e?.code === "auth/network-request-failed" ||
+          msg.includes("403") ||
+          msg.includes("securetoken") ||
+          msg.includes("API_KEY_HTTP_REFERRER_BLOCKED");
+
+        if (isHttpError && projectId) {
+          setAuthRuntimeError({
+            message: msg,
+            links: [
+              {
+                url: `https://console.cloud.google.com/apis/credentials?project=${projectId}`,
+                text: "Revisar Restricciones de API Key",
+              },
+            ],
+          });
+        } else {
+          setAuthRuntimeError({ message: msg });
+        }
       } finally {
         setLoadingAuth(false);
       }
@@ -218,13 +232,17 @@ const App: React.FC = () => {
       orderBy("createdAt", "desc")
     );
 
-    return onSnapshot(q, (snap) => {
-      const list: Trip[] = [];
-      snap.forEach((d) =>
-        list.push({ id: d.id, ...(d.data() as any) })
-      );
-      setTrips(list);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        const list: Trip[] = [];
+        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
+        setTrips(list);
+      },
+      (err) => {
+        console.error("Firestore onSnapshot error:", err);
+      }
+    );
   }, [user, authRuntimeError]);
 
   /* -------------------- theme -------------------- */
@@ -241,11 +259,52 @@ const App: React.FC = () => {
     });
   };
 
+  /* -------------------- PWA install prompt (no rompe si no se usa) -------------------- */
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPromptEvent(e as BeforeInstallPromptEvent);
+      setIsInstallBannerVisible(true);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!installPromptEvent) return;
+    await installPromptEvent.prompt();
+    const choice = await installPromptEvent.userChoice;
+    if (choice.outcome === "accepted") setIsInstallBannerVisible(false);
+    setInstallPromptEvent(null);
+  };
+
+  /* -------------------- actions mínimas para que TripList compile -------------------- */
+
+  const onDeleteTrip = async (tripId: string) => {
+    if (!user || !db) return;
+    if (!window.confirm("¿Estás seguro de que deseas eliminar este viaje?")) return;
+
+    await deleteDoc(doc(db, "users", user.uid, "trips", tripId));
+    await deleteBoardingPassesForTrip(user.uid, tripId);
+  };
+
+  const onAddTrip = async (tripData: Omit<Trip, "id" | "createdAt">) => {
+    if (!user || !db) return;
+    await addDoc(collection(db, "users", user.uid, "trips"), {
+      ...tripData,
+      createdAt: new Date().toISOString(),
+      purchaseDate: tripData.purchaseDate || new Date().toISOString(),
+    });
+    setIsModalOpen(false);
+    setIsQuickAddModalOpen(false);
+  };
+
   /* -------------------- render guards (DESPUÉS de hooks) -------------------- */
 
   if (!isFirebaseInitialized) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen p-6 text-center">
         <ClockIcon className="w-10 h-10 animate-pulse" />
         {firebaseInitializationError && (
           <p className="ml-3">{firebaseInitializationError.message}</p>
@@ -262,10 +321,16 @@ const App: React.FC = () => {
 
   const futureTrips = useMemo(
     () =>
-      trips.filter((t) => {
-        const end = getTripEndDate(t);
-        return end && end > new Date();
-      }),
+      [...trips]
+        .filter((t) => {
+          const end = getTripEndDate(t);
+          return end && end > new Date();
+        })
+        .sort((a, b) => {
+          const sa = getTripStartDate(a)?.getTime() || 0;
+          const sb = getTripStartDate(b)?.getTime() || 0;
+          return sa - sb;
+        }),
     [trips]
   );
 
@@ -313,11 +378,64 @@ const App: React.FC = () => {
           />
         )}
 
+        {isInstallBannerVisible && (
+          <div className="mb-4">
+            {/* Si tu componente InstallBanner existe y querés usarlo, descomentá abajo */}
+            {/* <InstallBanner onInstall={handleInstallClick} onDismiss={() => setIsInstallBannerVisible(false)} /> */}
+            <button
+              onClick={handleInstallClick}
+              className="px-4 py-2 rounded bg-slate-200 dark:bg-slate-700"
+            >
+              Instalar App
+            </button>
+            <button
+              onClick={() => setIsInstallBannerVisible(false)}
+              className="ml-2 px-4 py-2 rounded bg-slate-200 dark:bg-slate-700"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
+
+        {/* Navigation */}
         <div className="flex justify-center mb-6">
-          <div className="grid grid-cols-3 gap-1 bg-slate-200 dark:bg-slate-700 p-1 rounded-xl">
-            <button onClick={() => setView("list")}>Lista</button>
-            <button onClick={() => setView("calendar")}>Calendario</button>
-            <button onClick={() => setView("costs")}>Costos</button>
+          <div className="grid grid-cols-3 gap-1 bg-slate-200 dark:bg-slate-700 p-1 rounded-xl w-full max-w-md">
+            <button
+              onClick={() => setView("list")}
+              className={`py-2 rounded-lg text-sm font-semibold ${
+                view === "list"
+                  ? "bg-white dark:bg-slate-800"
+                  : "opacity-80"
+              }`}
+            >
+              <span className="inline-flex items-center justify-center">
+                <ListBulletIcon className="w-5 h-5 mr-1.5" /> Lista
+              </span>
+            </button>
+            <button
+              onClick={() => setView("calendar")}
+              className={`py-2 rounded-lg text-sm font-semibold ${
+                view === "calendar"
+                  ? "bg-white dark:bg-slate-800"
+                  : "opacity-80"
+              }`}
+            >
+              <span className="inline-flex items-center justify-center">
+                <CalendarDaysIcon className="w-5 h-5 mr-1.5" /> Calendario
+              </span>
+            </button>
+            <button
+              onClick={() => setView("costs")}
+              className={`py-2 rounded-lg text-sm font-semibold ${
+                view === "costs"
+                  ? "bg-white dark:bg-slate-800"
+                  : "opacity-80"
+              }`}
+            >
+              <span className="inline-flex items-center justify-center">
+                <CalculatorIcon className="w-5 h-5 mr-1.5" /> Costos
+              </span>
+            </button>
           </div>
         </div>
 
@@ -330,10 +448,28 @@ const App: React.FC = () => {
               />
             )}
 
+            {/* Filter chips */}
+            <div className="flex overflow-x-auto space-x-2 pb-2 mb-4">
+              {filterOptions.map((o) => (
+                <button
+                  key={o.key}
+                  onClick={() => setListFilter(o.key)}
+                  className={`px-4 py-1.5 rounded-full text-sm border ${
+                    listFilter === o.key
+                      ? "bg-indigo-600 border-indigo-600 text-white"
+                      : "border-slate-300 dark:border-slate-600 opacity-80"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+
             <TripList
               trips={filteredTrips}
-              onDeleteTrip={() => {}}
-              onSplitTrip={() => {}}
+              onDeleteTrip={onDeleteTrip}
+              // si tu TripList requiere esta prop, la dejamos como no-op por ahora
+              onSplitTrip={async () => {}}
               listFilter={listFilter}
               nextTripId={nextTrip?.id || null}
               userId={user.uid}
@@ -348,10 +484,41 @@ const App: React.FC = () => {
         {view === "costs" && <CostSummary trips={trips} />}
 
         {/* FAB */}
-        <div className="fixed bottom-6 right-6">
+        <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end space-y-3">
+          {isFabMenuOpen && (
+            <>
+              <button
+                onClick={() => {
+                  setIsQuickAddModalOpen(true);
+                  setIsFabMenuOpen(false);
+                }}
+                className="flex items-center space-x-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 transition-transform hover:scale-105"
+              >
+                <PencilSquareIcon className="w-5 h-5" />
+                <span className="font-semibold text-sm">Manual</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsModalOpen(true);
+                  setIsFabMenuOpen(false);
+                }}
+                className="flex items-center space-x-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 transition-transform hover:scale-105"
+              >
+                <MailIcon className="w-5 h-5" />
+                <span className="font-semibold text-sm">Importar Email</span>
+              </button>
+            </>
+          )}
+
           <button
-            onClick={() => setIsModalOpen(true)}
-            className="p-4 rounded-full bg-indigo-600 text-white"
+            onClick={() => setIsFabMenuOpen((v) => !v)}
+            className={`p-4 rounded-full shadow-2xl text-white transition-transform duration-300 ${
+              isFabMenuOpen
+                ? "bg-slate-600 rotate-45"
+                : "bg-indigo-600 hover:scale-110"
+            }`}
+            aria-label="Agregar viaje"
           >
             <PlusCircleIcon className="w-8 h-8" />
           </button>
@@ -360,14 +527,18 @@ const App: React.FC = () => {
         {isModalOpen && (
           <EmailImporter
             onClose={() => setIsModalOpen(false)}
-            onAddTrip={async () => {}}
+            onAddTrip={onAddTrip}
+            // NECESARIO para que compile: EmailImporterProps exige estas props
+            // y ya no usamos key en frontend (Gemini corre en Netlify Function).
+            apiKey={""}
+            onInvalidApiKey={() => {}}
           />
         )}
 
         {isQuickAddModalOpen && (
           <QuickAddModal
             onClose={() => setIsQuickAddModalOpen(false)}
-            onAddTrip={async () => {}}
+            onAddTrip={onAddTrip}
           />
         )}
       </div>
