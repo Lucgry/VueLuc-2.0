@@ -24,6 +24,9 @@ import { ClockIcon } from "./components/icons/ClockIcon";
 
 import { deleteBoardingPassesForTrip } from "./services/db";
 
+// ✅ NUEVO: normalización ida/vuelta (tu lógica)
+import { normalizeTripFlights } from "./services/tripLeg";
+
 import { onAuthStateChanged, User } from "firebase/auth";
 import {
   db,
@@ -41,7 +44,6 @@ import {
   query,
   orderBy,
   updateDoc,
-  getDoc,
 } from "firebase/firestore";
 
 /* ------------------------------------------------------------------ */
@@ -71,107 +73,56 @@ const filterOptions: { key: ListFilter; label: string }[] = [
   { key: "all", label: "Todos" },
 ];
 
-const SLA_CODE = "SLA";
-
-// Ventana temporal para auto-agrupado (en días).
-// Elegí un valor amplio: tu ejemplo puede ser > 60 días (dic → mar).
-const AUTO_GROUP_WINDOW_DAYS = 180;
-
-// Activa/desactiva el auto-agrupado server-side (Firestore).
-const ENABLE_AUTO_GROUPING = true;
-
-const safeUpper = (s: unknown) => String(s || "").toUpperCase().trim();
-
-const toDate = (iso: string | null | undefined): Date | null => {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? null : d;
-};
-
-const daysBetween = (a: Date, b: Date): number => {
-  const ms = Math.abs(b.getTime() - a.getTime());
-  return ms / (1000 * 60 * 60 * 24);
-};
-
 const getTripStartDate = (trip: Trip): Date | null => {
   const d =
     trip.departureFlight?.departureDateTime ||
     trip.returnFlight?.departureDateTime;
-  return toDate(d);
+  return d ? new Date(d) : null;
 };
 
 const getTripEndDate = (trip: Trip): Date | null => {
   const d =
     trip.returnFlight?.arrivalDateTime ||
     trip.departureFlight?.arrivalDateTime;
-  return toDate(d);
+  return d ? new Date(d) : null;
 };
 
-const getSingleFlight = (trip: Trip): Flight | null => {
-  return trip.departureFlight || trip.returnFlight || null;
+const safeDate = (iso?: string | null): Date | null => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
 };
 
-const isOneWayTrip = (trip: Trip): boolean => {
-  const hasOut = !!trip.departureFlight;
-  const hasIn = !!trip.returnFlight;
-  return hasOut !== hasIn;
+const daysBetween = (aIso?: string | null, bIso?: string | null): number | null => {
+  const a = safeDate(aIso);
+  const b = safeDate(bIso);
+  if (!a || !b) return null;
+  return Math.abs(a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24);
 };
 
-const flightKey = (f: Flight): string => {
-  return `${safeUpper(f.departureAirportCode)}-${safeUpper(f.arrivalAirportCode)}`;
+const pickOldestIso = (a?: string | null, b?: string | null): string | null => {
+  const da = safeDate(a || null);
+  const db = safeDate(b || null);
+  if (!da && !db) return null;
+  if (da && !db) return a || null;
+  if (!da && db) return b || null;
+  return (da!.getTime() <= db!.getTime()) ? (a || null) : (b || null);
 };
 
-const areInverseRoutes = (a: Flight, b: Flight): boolean => {
-  return (
-    safeUpper(a.departureAirportCode) === safeUpper(b.arrivalAirportCode) &&
-    safeUpper(a.arrivalAirportCode) === safeUpper(b.departureAirportCode)
-  );
+/**
+ * Define si un Trip es one-way (solo ida o solo vuelta),
+ * pero usando normalización (no “qué campo existe”).
+ */
+const getOneWayLeg = (trip: Trip): "ida" | "vuelta" | null => {
+  const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
+  if (idaFlight && !vueltaFlight) return "ida";
+  if (vueltaFlight && !idaFlight) return "vuelta";
+  return null;
 };
 
-const isArrivalToSalta = (f: Flight | null): boolean => {
-  if (!f) return false;
-  return safeUpper(f.arrivalAirportCode) === SLA_CODE;
-};
-
-const isDepartureFromSalta = (f: Flight | null): boolean => {
-  if (!f) return false;
-  return safeUpper(f.departureAirportCode) === SLA_CODE;
-};
-
-// Normaliza un trip de tramo único:
-// - Si el único vuelo llega a SLA => debe ir en returnFlight (vuelta)
-// - Si el único vuelo NO llega a SLA => debe ir en departureFlight (ida)
-const normalizeOneWayTrip = (
-  trip: Trip
-): { normalized: Trip; changed: boolean } => {
-  if (!isOneWayTrip(trip)) return { normalized: trip, changed: false };
-
-  const f = getSingleFlight(trip);
-  if (!f) return { normalized: trip, changed: false };
-
-  const shouldBeReturn = isArrivalToSalta(f);
-
-  // Caso: está guardado como departureFlight pero debería ser returnFlight
-  if (shouldBeReturn && trip.departureFlight && !trip.returnFlight) {
-    const normalized: Trip = {
-      ...trip,
-      departureFlight: null,
-      returnFlight: trip.departureFlight,
-    };
-    return { normalized, changed: true };
-  }
-
-  // Caso: está guardado como returnFlight pero debería ser departureFlight
-  if (!shouldBeReturn && trip.returnFlight && !trip.departureFlight) {
-    const normalized: Trip = {
-      ...trip,
-      departureFlight: trip.returnFlight,
-      returnFlight: null,
-    };
-    return { normalized, changed: true };
-  }
-
-  return { normalized: trip, changed: false };
+const isRoundTrip = (trip: Trip): boolean => {
+  const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
+  return !!idaFlight && !!vueltaFlight;
 };
 
 /* ------------------------------------------------------------------ */
@@ -232,6 +183,7 @@ const App: React.FC = () => {
 
   const [isAirportMode, setIsAirportMode] = useState(false);
 
+  // Agrupamiento manual (modo selección)
   const [groupingState, setGroupingState] = useState<{
     active: boolean;
     sourceTrip: Trip | null;
@@ -247,10 +199,15 @@ const App: React.FC = () => {
 
   const [installPromptEvent, setInstallPromptEvent] =
     useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstallBannerVisible, setIsInstallBannerVisible] = useState(false);
+  const [isInstallBannerVisible, setIsInstallBannerVisible] =
+    useState(false);
 
-  // guards
+  // refs
   const processingRef = useRef(false);
+
+  /* -------------------- config: ventana temporal auto-agrupado -------------------- */
+  // Ajustable: si querés más estricto, bajalo (ej 7-10 días). Si querés más flexible, subilo (ej 30-45).
+  const AUTO_GROUP_WINDOW_DAYS = 21;
 
   /* -------------------- auth -------------------- */
 
@@ -352,7 +309,7 @@ const App: React.FC = () => {
     setInstallPromptEvent(null);
   };
 
-  /* -------------------- CRUD actions -------------------- */
+  /* -------------------- actions -------------------- */
 
   const onDeleteTrip = async (tripId: string) => {
     if (!user || !db) return;
@@ -376,243 +333,115 @@ const App: React.FC = () => {
     setIsQuickAddModalOpen(false);
   };
 
-  /* ------------------------------------------------------------------ */
-  /* Grouping: manual + auto                                             */
-  /* ------------------------------------------------------------------ */
+  /**
+   * Desagrupar: si un trip tiene ida y vuelta, lo separa en 2 docs.
+   */
+  const onSplitTrip = async (trip: Trip) => {
+    if (!user || !db) return;
+    const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
 
-  const onStartGrouping = (trip: Trip) => {
-    setGroupingState({ active: true, sourceTrip: trip });
-  };
+    if (!idaFlight || !vueltaFlight) return;
 
-  const cancelGrouping = () => {
+    if (
+      !window.confirm(
+        "Esto separará el viaje en dos tramos (Ida y Vuelta). ¿Continuar?"
+      )
+    ) {
+      return;
+    }
+
+    // Crear dos nuevos trips (uno por tramo) y borrar el original
+    const now = new Date().toISOString();
+    const purchaseDate = trip.purchaseDate || now;
+
+    await addDoc(collection(db, "users", user.uid, "trips"), {
+      departureFlight: idaFlight,
+      returnFlight: null,
+      purchaseDate,
+      createdAt: now,
+    });
+
+    await addDoc(collection(db, "users", user.uid, "trips"), {
+      departureFlight: null,
+      returnFlight: vueltaFlight,
+      purchaseDate,
+      createdAt: now,
+    });
+
+    await deleteDoc(doc(db, "users", user.uid, "trips", trip.id));
+    await deleteBoardingPassesForTrip(user.uid, trip.id);
+
+    // Cerrar modo agrupamiento por si estaba activo
     setGroupingState({ active: false, sourceTrip: null });
   };
 
-  const mergeTrips = async (a: Trip, b: Trip) => {
+  /**
+   * Merge core: dado source (one-way) y target (one-way),
+   * arma un viaje ida/vuelta y lo persiste como:
+   * - updateDoc sobre uno de los docs
+   * - deleteDoc del otro
+   */
+  const mergeTwoTrips = async (source: Trip, target: Trip) => {
     if (!user || !db) return;
 
-    // Normalizamos por si alguno está invertido
-    const na = normalizeOneWayTrip(a).normalized;
-    const nb = normalizeOneWayTrip(b).normalized;
+    const sNorm = normalizeTripFlights(source);
+    const tNorm = normalizeTripFlights(target);
 
-    const fa = getSingleFlight(na);
-    const fb = getSingleFlight(nb);
-    if (!fa || !fb) return;
+    const sLeg = getOneWayLeg(source);
+    const tLeg = getOneWayLeg(target);
 
-    // Determinar outbound/inbound por lógica robusta:
-    // - outbound: el que sale de SLA (si existe)
-    // - inbound: el que llega a SLA (si existe)
-    // - fallback: por orden temporal (primero outbound)
-    let outbound: Flight | null = null;
-    let inbound: Flight | null = null;
+    // Guardrail: solo mergeamos si realmente son complementarios (ida + vuelta)
+    if (!sLeg || !tLeg || sLeg === tLeg) return;
 
-    if (isDepartureFromSalta(fa)) outbound = fa;
-    if (isDepartureFromSalta(fb)) outbound = outbound || fb;
+    const idaFlight = sLeg === "ida" ? sNorm.idaFlight : tNorm.idaFlight;
+    const vueltaFlight = sLeg === "vuelta" ? sNorm.vueltaFlight : tNorm.vueltaFlight;
 
-    if (isArrivalToSalta(fa)) inbound = fa;
-    if (isArrivalToSalta(fb)) inbound = inbound || fb;
+    if (!idaFlight || !vueltaFlight) return;
 
-    // Si no se pudo inferir, usar orden temporal
-    if (!outbound || !inbound) {
-      const da = toDate(fa.departureDateTime);
-      const dbb = toDate(fb.departureDateTime);
-      if (da && dbb) {
-        if (da <= dbb) {
-          outbound = outbound || fa;
-          inbound = inbound || fb;
-        } else {
-          outbound = outbound || fb;
-          inbound = inbound || fa;
-        }
-      } else {
-        outbound = outbound || fa;
-        inbound = inbound || fb;
-      }
-    }
-
-    // Elegir el doc “principal” a mantener:
-    // Mantener el que tenga menor startDate
-    const aStart = getTripStartDate(a)?.getTime() ?? Number.POSITIVE_INFINITY;
-    const bStart = getTripStartDate(b)?.getTime() ?? Number.POSITIVE_INFINITY;
-    const keep = aStart <= bStart ? a : b;
-    const remove = keep.id === a.id ? b : a;
-
-    const keepRef = doc(db, "users", user.uid, "trips", keep.id);
-    const removeRef = doc(db, "users", user.uid, "trips", remove.id);
-
-    // Merge purchaseDate: el más antiguo disponible
-    const keepPurchase = toDate((keep as any).purchaseDate)?.getTime();
-    const removePurchase = toDate((remove as any).purchaseDate)?.getTime();
     const mergedPurchaseDate =
-      keepPurchase && removePurchase
-        ? new Date(Math.min(keepPurchase, removePurchase)).toISOString()
-        : (keep as any).purchaseDate || (remove as any).purchaseDate || new Date().toISOString();
+      pickOldestIso(source.purchaseDate || null, target.purchaseDate || null) ||
+      idaFlight.departureDateTime ||
+      new Date().toISOString();
 
-    await updateDoc(keepRef, {
-      departureFlight: outbound,
-      returnFlight: inbound,
+    // Elegimos “keep” como el más viejo por createdAt (si existe), para estabilidad visual
+    const keep =
+      (safeDate(source.createdAt || null)?.getTime() ?? Infinity) <=
+      (safeDate(target.createdAt || null)?.getTime() ?? Infinity)
+        ? source
+        : target;
+
+    const remove = keep.id === source.id ? target : source;
+
+    await updateDoc(doc(db, "users", user.uid, "trips", keep.id), {
+      departureFlight: idaFlight,
+      returnFlight: vueltaFlight,
       purchaseDate: mergedPurchaseDate,
+      // createdAt NO lo tocamos: mantenemos el del doc “keep”
     });
 
-    await deleteDoc(removeRef);
-    // Nota: si remove tenía boarding passes, hoy no los migramos automáticamente.
+    await deleteDoc(doc(db, "users", user.uid, "trips", remove.id));
+    await deleteBoardingPassesForTrip(user.uid, remove.id);
+  };
+
+  const onStartGrouping = (trip: Trip) => {
+    // Solo permitimos iniciar si es un tramo único (one-way)
+    if (!getOneWayLeg(trip)) return;
+    setGroupingState({ active: true, sourceTrip: trip });
   };
 
   const onConfirmGrouping = async (targetTrip: Trip) => {
     if (!groupingState.active || !groupingState.sourceTrip) return;
+    const sourceTrip = groupingState.sourceTrip;
 
     try {
-      await mergeTrips(groupingState.sourceTrip, targetTrip);
+      await mergeTwoTrips(sourceTrip, targetTrip);
     } catch (e) {
-      console.error("Error grouping trips:", e);
-      alert("No se pudo agrupar. Reintenta.");
+      console.error("Error merging trips:", e);
+      alert("No se pudo agrupar. Revisá consola para más detalle.");
     } finally {
-      cancelGrouping();
+      setGroupingState({ active: false, sourceTrip: null });
     }
   };
-
-  const onSplitTrip = async (trip: Trip) => {
-    if (!user || !db) return;
-    if (!trip.departureFlight || !trip.returnFlight) return;
-
-    if (!window.confirm("¿Separar este viaje en dos tramos?")) return;
-
-    try {
-      const baseCreatedAt = (trip as any).createdAt || new Date().toISOString();
-      const purchaseDate = (trip as any).purchaseDate || new Date().toISOString();
-
-      // Crear dos nuevos trips (uno ida, uno vuelta) y borrar el original
-      await addDoc(collection(db, "users", user.uid, "trips"), {
-        departureFlight: trip.departureFlight,
-        returnFlight: null,
-        createdAt: baseCreatedAt,
-        purchaseDate,
-      });
-
-      await addDoc(collection(db, "users", user.uid, "trips"), {
-        departureFlight: null,
-        returnFlight: trip.returnFlight,
-        createdAt: baseCreatedAt,
-        purchaseDate,
-      });
-
-      await deleteDoc(doc(db, "users", user.uid, "trips", trip.id));
-
-      // Boarding passes del trip original quedan asociados a un id que ya no existe.
-      // Por ahora los borramos para evitar basura.
-      await deleteBoardingPassesForTrip(user.uid, trip.id);
-    } catch (e) {
-      console.error("Error splitting trip:", e);
-      alert("No se pudo desagrupar. Reintenta.");
-    }
-  };
-
-  // 1) Normalización automática de tramos mal clasificados (llega a SLA => vuelta)
-  useEffect(() => {
-    if (!user || !db || authRuntimeError) return;
-    if (processingRef.current) return;
-
-    const run = async () => {
-      processingRef.current = true;
-      try {
-        const updates: Promise<void>[] = [];
-
-        for (const t of trips) {
-          if (!t?.id) continue;
-          if (!isOneWayTrip(t)) continue;
-
-          const { normalized, changed } = normalizeOneWayTrip(t);
-          if (!changed) continue;
-
-          const ref = doc(db, "users", user.uid, "trips", t.id);
-          updates.push(
-            updateDoc(ref, {
-              departureFlight: normalized.departureFlight ?? null,
-              returnFlight: normalized.returnFlight ?? null,
-            }) as any
-          );
-        }
-
-        if (updates.length) {
-          await Promise.all(updates);
-        }
-      } catch (e) {
-        console.error("Auto-normalization error:", e);
-      } finally {
-        processingRef.current = false;
-      }
-    };
-
-    run();
-  }, [trips, user, authRuntimeError]);
-
-  // 2) Auto-agrupado: detecta pares inversos dentro de ventana temporal y los mergea
-  useEffect(() => {
-    if (!ENABLE_AUTO_GROUPING) return;
-    if (!user || !db || authRuntimeError) return;
-    if (processingRef.current) return;
-
-    const run = async () => {
-      processingRef.current = true;
-      try {
-        const oneWays = trips
-          .filter((t) => isOneWayTrip(t))
-          .map((t) => normalizeOneWayTrip(t).normalized);
-
-        if (oneWays.length < 2) return;
-
-        // Ordenar por fecha para hacer matching estable
-        const sorted = [...oneWays].sort((a, b) => {
-          const sa = getTripStartDate(a)?.getTime() ?? 0;
-          const sb = getTripStartDate(b)?.getTime() ?? 0;
-          return sa - sb;
-        });
-
-        const used = new Set<string>();
-
-        for (let i = 0; i < sorted.length; i++) {
-          const a = sorted[i];
-          if (used.has(a.id)) continue;
-
-          const fa = getSingleFlight(a);
-          const da = fa ? toDate(fa.departureDateTime) : null;
-          if (!fa || !da) continue;
-
-          for (let j = i + 1; j < sorted.length; j++) {
-            const b = sorted[j];
-            if (used.has(b.id)) continue;
-
-            const fb = getSingleFlight(b);
-            const dbb = fb ? toDate(fb.departureDateTime) : null;
-            if (!fb || !dbb) continue;
-
-            // Reglas:
-            // - rutas inversas
-            // - ventana temporal
-            // - idealmente la vuelta sale después de la ida (si se puede)
-            if (!areInverseRoutes(fa, fb)) continue;
-
-            const window = daysBetween(da, dbb);
-            if (window > AUTO_GROUP_WINDOW_DAYS) continue;
-
-            // Condición suave: intentamos que "ida" sea la más temprana
-            // pero si vienen invertidos igual los mergeamos (mergeTrips decide).
-            await mergeTrips(a, b);
-
-            used.add(a.id);
-            used.add(b.id);
-            break;
-          }
-        }
-      } catch (e) {
-        console.error("Auto-grouping error:", e);
-      } finally {
-        processingRef.current = false;
-      }
-    };
-
-    run();
-  }, [trips, user, authRuntimeError]);
 
   /* ------------------------------------------------------------------ */
   /* IMPORTANT: useMemo SIEMPRE ANTES de cualquier return condicional     */
@@ -666,6 +495,73 @@ const App: React.FC = () => {
       return true;
     });
   }, [trips, listFilter]);
+
+  /* -------------------- AUTO-GROUP (por ventana temporal) -------------------- */
+  useEffect(() => {
+    if (!user || !db) return;
+    if (groupingState.active) return; // no interferir con el modo manual
+    if (processingRef.current) return;
+
+    // Solo tiene sentido si hay al menos 2 trips
+    if (!trips || trips.length < 2) return;
+
+    const run = async () => {
+      processingRef.current = true;
+      try {
+        // Nos quedamos solo con one-way que NO estén ya roundtrip
+        const oneWays = trips.filter((t) => !isRoundTrip(t) && !!getOneWayLeg(t));
+
+        // Si no hay pares potenciales, listo
+        if (oneWays.length < 2) return;
+
+        // Construimos candidatos (ida vs vuelta) con score = proximidad temporal (días)
+        type Candidate = { a: Trip; b: Trip; score: number };
+
+        const candidates: Candidate[] = [];
+
+        for (let i = 0; i < oneWays.length; i++) {
+          for (let j = i + 1; j < oneWays.length; j++) {
+            const t1 = oneWays[i];
+            const t2 = oneWays[j];
+
+            const leg1 = getOneWayLeg(t1);
+            const leg2 = getOneWayLeg(t2);
+            if (!leg1 || !leg2) continue;
+            if (leg1 === leg2) continue; // guardrail: deben ser complementarios
+
+            // Distancia temporal: usamos departureDateTime del vuelo existente en cada trip
+            const t1Norm = normalizeTripFlights(t1);
+            const t2Norm = normalizeTripFlights(t2);
+
+            const t1Flight: Flight | undefined = leg1 === "ida" ? t1Norm.idaFlight : t1Norm.vueltaFlight;
+            const t2Flight: Flight | undefined = leg2 === "ida" ? t2Norm.idaFlight : t2Norm.vueltaFlight;
+
+            const d = daysBetween(t1Flight?.departureDateTime ?? null, t2Flight?.departureDateTime ?? null);
+            if (d == null) continue;
+
+            if (d <= AUTO_GROUP_WINDOW_DAYS) {
+              candidates.push({ a: t1, b: t2, score: d });
+            }
+          }
+        }
+
+        if (!candidates.length) return;
+
+        // Elegimos el mejor candidato (menor score) y mergeamos UNO por corrida
+        candidates.sort((x, y) => x.score - y.score);
+        const best = candidates[0];
+
+        // Merge
+        await mergeTwoTrips(best.a, best.b);
+      } catch (e) {
+        console.error("Auto-group error:", e);
+      } finally {
+        processingRef.current = false;
+      }
+    };
+
+    run();
+  }, [trips, user, db, groupingState.active]);
 
   /* -------------------- render guards (DESPUÉS de hooks) -------------------- */
 
