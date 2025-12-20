@@ -2,16 +2,26 @@
 import type { Trip, Flight } from "../types";
 import { groupFlightsIntoTrips } from "./groupFlights";
 
-// Nota: el schema e instrucciones ya NO viven en el frontend.
-// Se ejecutan en la Netlify Function (server-side) para no exponer lógica sensible ni API keys.
-
 type GeminiResponse = {
   flights: Flight[];
   purchaseDate?: string | null;
 };
 
+// Helper: obtiene una fecha comparable (ms) para un grupo
+const getGroupStartMs = (group: any): number => {
+  const dt =
+    group?.outbound?.departureDateTime ||
+    group?.inbound?.departureDateTime ||
+    null;
+
+  if (!dt) return Number.POSITIVE_INFINITY;
+
+  const ms = new Date(dt).getTime();
+  return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
+};
+
 export const parseFlightEmail = async (
-  _apiKey: string, // se mantiene por compatibilidad (no se usa). El frontend NO maneja claves.
+  _apiKey: string, // compatibilidad (no se usa)
   emailText: string,
   pdfBase64?: string | null
 ): Promise<Omit<Trip, "id" | "createdAt">> => {
@@ -20,7 +30,6 @@ export const parseFlightEmail = async (
   }
 
   try {
-    // Llamada segura: el servidor (Netlify Function) tiene GOOGLE_API_KEY en variables de entorno.
     const res = await fetch("/.netlify/functions/gemini", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -39,35 +48,43 @@ export const parseFlightEmail = async (
 
     const aiResponse = data as GeminiResponse;
 
-    // Validación mínima defensiva
     if (!aiResponse || !Array.isArray(aiResponse.flights)) {
       throw new Error("Respuesta inválida de la IA: falta 'flights'.");
     }
+
     if (aiResponse.flights.length === 0) {
-      throw new Error("La IA no pudo encontrar ningún vuelo en el texto proporcionado.");
+      throw new Error("La IA no pudo encontrar vuelos en el correo.");
     }
 
-    // purchaseDate: no lo forzamos (Gemini puede mandarlo null).
-    // Fallback: salida del primer vuelo, y si no existe, "ahora".
+    // Fecha de compra (fallback robusto)
     const purchaseDate =
       (aiResponse.purchaseDate && String(aiResponse.purchaseDate)) ||
       aiResponse.flights[0]?.departureDateTime ||
       new Date().toISOString();
 
-    // Agrupar ida/vuelta con reglas robustas (invertidos + ventana temporal + bonus bookingReference)
+    /**
+     * Agrupación:
+     * - NO se decide acá si deben unirse viajes existentes
+     * - Solo se agrupan vuelos INTERNOS al mail
+     */
     const groups = groupFlightsIntoTrips(aiResponse.flights);
 
-    // Elegir grupo principal:
-    // - preferimos el que tenga outbound saliendo de SLA
-    // - si no, el primero
-    const primary =
-      groups.find(
-        (g) =>
-          g?.outbound?.departureAirportCode?.toUpperCase?.().trim?.() === "SLA"
-      ) || groups[0];
+    if (!groups || groups.length === 0) {
+      throw new Error("No se pudo agrupar ningún vuelo del correo.");
+    }
 
-    if (!primary || !primary.outbound) {
-      throw new Error("La IA no pudo extraer ningún detalle de vuelo válido del correo.");
+    /**
+     * ✅ ELECCIÓN CORRECTA DEL GRUPO PRINCIPAL
+     * - Se elige el grupo con FECHA MÁS PRÓXIMA
+     * - NO por bookingReference
+     * - NO por SLA
+     */
+    const primary = [...groups].sort(
+      (a, b) => getGroupStartMs(a) - getGroupStartMs(b)
+    )[0];
+
+    if (!primary || (!primary.outbound && !primary.inbound)) {
+      throw new Error("No se pudo determinar un grupo de vuelo válido.");
     }
 
     const finalTrip: Omit<Trip, "id" | "createdAt"> = {
@@ -78,7 +95,9 @@ export const parseFlightEmail = async (
 
     return finalTrip;
   } catch (error: any) {
-    console.error("Error procesando el email con Gemini (vía Netlify Function):", error);
-    throw new Error(`Error de la IA: ${error?.message || "No se pudo procesar el correo."}`);
+    console.error("Error procesando el email con Gemini:", error);
+    throw new Error(
+      `Error de la IA: ${error?.message || "No se pudo procesar el correo."}`
+    );
   }
 };
