@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import type { Trip, Flight } from "../types";
+import type { Trip } from "../types";
 import { parseFlightEmail } from "../services/geminiService";
 import { Spinner } from "./Spinner";
 import { MailIcon } from "./icons/MailIcon";
@@ -23,7 +23,7 @@ const fileToBase64 = (file: File): Promise<string> =>
   });
 
 /* ------------------------------------------------------------------ */
-/* Limpieza + reglas para IA (queda igual, está bien)                  */
+/* Limpieza + reglas para IA                                           */
 /* ------------------------------------------------------------------ */
 
 const buildAiInput = (raw: string): string => {
@@ -101,27 +101,14 @@ const EmailImporter: React.FC<EmailImporterProps> = ({
     try {
       const pdfBase64 = pdfFile ? await fileToBase64(pdfFile) : null;
 
-      const { flights, purchaseDate } = await parseFlightEmail(
+      // ✅ CONTRATO CORRECTO: devuelve UN Trip
+      const newTrip = await parseFlightEmail(
         apiKey,
         aiInput,
         pdfBase64
       );
 
-      if (!flights.length) {
-        throw new Error("No se detectaron vuelos en el email.");
-      }
-
-      // 🔑 CLAVE: crear UN trip por vuelo
-      for (const flight of flights) {
-        const newTrip: Omit<Trip, "id" | "createdAt"> = {
-          departureFlight: flight,
-          returnFlight: null,
-          purchaseDate,
-        };
-
-        await onAddTrip(newTrip);
-      }
-
+      await onAddTrip(newTrip);
       onClose();
     } catch (err: any) {
       const message =
