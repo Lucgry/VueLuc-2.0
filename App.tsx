@@ -24,9 +24,6 @@ import { ClockIcon } from "./components/icons/ClockIcon";
 
 import { deleteBoardingPassesForTrip } from "./services/db";
 
-// ✅ NUEVO: lógica ida/vuelta por Salta + normalización
-import { inferLegType, normalizeTripFlights } from "./services/tripLeg";
-
 import { onAuthStateChanged, User } from "firebase/auth";
 import {
   db,
@@ -43,7 +40,8 @@ import {
   onSnapshot,
   query,
   orderBy,
-  writeBatch, // ✅ NUEVO
+  updateDoc,
+  getDoc,
 } from "firebase/firestore";
 
 /* ------------------------------------------------------------------ */
@@ -73,33 +71,107 @@ const filterOptions: { key: ListFilter; label: string }[] = [
   { key: "all", label: "Todos" },
 ];
 
+const SLA_CODE = "SLA";
+
+// Ventana temporal para auto-agrupado (en días).
+// Elegí un valor amplio: tu ejemplo puede ser > 60 días (dic → mar).
+const AUTO_GROUP_WINDOW_DAYS = 180;
+
+// Activa/desactiva el auto-agrupado server-side (Firestore).
+const ENABLE_AUTO_GROUPING = true;
+
+const safeUpper = (s: unknown) => String(s || "").toUpperCase().trim();
+
+const toDate = (iso: string | null | undefined): Date | null => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const daysBetween = (a: Date, b: Date): number => {
+  const ms = Math.abs(b.getTime() - a.getTime());
+  return ms / (1000 * 60 * 60 * 24);
+};
+
 const getTripStartDate = (trip: Trip): Date | null => {
   const d =
     trip.departureFlight?.departureDateTime ||
     trip.returnFlight?.departureDateTime;
-  return d ? new Date(d) : null;
+  return toDate(d);
 };
 
 const getTripEndDate = (trip: Trip): Date | null => {
   const d =
     trip.returnFlight?.arrivalDateTime ||
     trip.departureFlight?.arrivalDateTime;
-  return d ? new Date(d) : null;
+  return toDate(d);
 };
 
-const getFlightFingerprint = (flight: Flight | null): string | null => {
-  if (
-    !flight ||
-    !flight.flightNumber ||
-    !flight.departureDateTime ||
-    !flight.departureAirportCode ||
-    !flight.arrivalAirportCode
-  ) {
-    return null;
+const getSingleFlight = (trip: Trip): Flight | null => {
+  return trip.departureFlight || trip.returnFlight || null;
+};
+
+const isOneWayTrip = (trip: Trip): boolean => {
+  const hasOut = !!trip.departureFlight;
+  const hasIn = !!trip.returnFlight;
+  return hasOut !== hasIn;
+};
+
+const flightKey = (f: Flight): string => {
+  return `${safeUpper(f.departureAirportCode)}-${safeUpper(f.arrivalAirportCode)}`;
+};
+
+const areInverseRoutes = (a: Flight, b: Flight): boolean => {
+  return (
+    safeUpper(a.departureAirportCode) === safeUpper(b.arrivalAirportCode) &&
+    safeUpper(a.arrivalAirportCode) === safeUpper(b.departureAirportCode)
+  );
+};
+
+const isArrivalToSalta = (f: Flight | null): boolean => {
+  if (!f) return false;
+  return safeUpper(f.arrivalAirportCode) === SLA_CODE;
+};
+
+const isDepartureFromSalta = (f: Flight | null): boolean => {
+  if (!f) return false;
+  return safeUpper(f.departureAirportCode) === SLA_CODE;
+};
+
+// Normaliza un trip de tramo único:
+// - Si el único vuelo llega a SLA => debe ir en returnFlight (vuelta)
+// - Si el único vuelo NO llega a SLA => debe ir en departureFlight (ida)
+const normalizeOneWayTrip = (
+  trip: Trip
+): { normalized: Trip; changed: boolean } => {
+  if (!isOneWayTrip(trip)) return { normalized: trip, changed: false };
+
+  const f = getSingleFlight(trip);
+  if (!f) return { normalized: trip, changed: false };
+
+  const shouldBeReturn = isArrivalToSalta(f);
+
+  // Caso: está guardado como departureFlight pero debería ser returnFlight
+  if (shouldBeReturn && trip.departureFlight && !trip.returnFlight) {
+    const normalized: Trip = {
+      ...trip,
+      departureFlight: null,
+      returnFlight: trip.departureFlight,
+    };
+    return { normalized, changed: true };
   }
-  return `${flight.flightNumber
-    .trim()
-    .toUpperCase()}-${flight.departureDateTime}-${flight.departureAirportCode}-${flight.arrivalAirportCode}`;
+
+  // Caso: está guardado como returnFlight pero debería ser departureFlight
+  if (!shouldBeReturn && trip.returnFlight && !trip.departureFlight) {
+    const normalized: Trip = {
+      ...trip,
+      departureFlight: trip.returnFlight,
+      returnFlight: null,
+    };
+    return { normalized, changed: true };
+  }
+
+  return { normalized: trip, changed: false };
 };
 
 /* ------------------------------------------------------------------ */
@@ -159,6 +231,7 @@ const App: React.FC = () => {
   const [listFilter, setListFilter] = useState<ListFilter>("future");
 
   const [isAirportMode, setIsAirportMode] = useState(false);
+
   const [groupingState, setGroupingState] = useState<{
     active: boolean;
     sourceTrip: Trip | null;
@@ -174,12 +247,10 @@ const App: React.FC = () => {
 
   const [installPromptEvent, setInstallPromptEvent] =
     useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstallBannerVisible, setIsInstallBannerVisible] =
-    useState(false);
+  const [isInstallBannerVisible, setIsInstallBannerVisible] = useState(false);
 
-  // refs
+  // guards
   const processingRef = useRef(false);
-  const duplicateCleanupRun = useRef(false);
 
   /* -------------------- auth -------------------- */
 
@@ -281,7 +352,7 @@ const App: React.FC = () => {
     setInstallPromptEvent(null);
   };
 
-  /* -------------------- actions -------------------- */
+  /* -------------------- CRUD actions -------------------- */
 
   const onDeleteTrip = async (tripId: string) => {
     if (!user || !db) return;
@@ -305,9 +376,11 @@ const App: React.FC = () => {
     setIsQuickAddModalOpen(false);
   };
 
-  /* -------------------- grouping (manual + auto) -------------------- */
+  /* ------------------------------------------------------------------ */
+  /* Grouping: manual + auto                                             */
+  /* ------------------------------------------------------------------ */
 
-  const startGrouping = (trip: Trip) => {
+  const onStartGrouping = (trip: Trip) => {
     setGroupingState({ active: true, sourceTrip: trip });
   };
 
@@ -315,143 +388,231 @@ const App: React.FC = () => {
     setGroupingState({ active: false, sourceTrip: null });
   };
 
-  const confirmGrouping = async (targetTrip: Trip) => {
+  const mergeTrips = async (a: Trip, b: Trip) => {
     if (!user || !db) return;
 
-    const sourceTrip = groupingState.sourceTrip;
-    if (!sourceTrip) return;
+    // Normalizamos por si alguno está invertido
+    const na = normalizeOneWayTrip(a).normalized;
+    const nb = normalizeOneWayTrip(b).normalized;
 
-    const s = normalizeTripFlights(sourceTrip);
-    const t = normalizeTripFlights(targetTrip);
+    const fa = getSingleFlight(na);
+    const fb = getSingleFlight(nb);
+    if (!fa || !fb) return;
 
-    const sourceLeg: "ida" | "vuelta" | null =
-      s.idaFlight && !s.vueltaFlight ? "ida" :
-      s.vueltaFlight && !s.idaFlight ? "vuelta" :
-      null;
+    // Determinar outbound/inbound por lógica robusta:
+    // - outbound: el que sale de SLA (si existe)
+    // - inbound: el que llega a SLA (si existe)
+    // - fallback: por orden temporal (primero outbound)
+    let outbound: Flight | null = null;
+    let inbound: Flight | null = null;
 
-    const targetLeg: "ida" | "vuelta" | null =
-      t.idaFlight && !t.vueltaFlight ? "ida" :
-      t.vueltaFlight && !t.idaFlight ? "vuelta" :
-      null;
+    if (isDepartureFromSalta(fa)) outbound = fa;
+    if (isDepartureFromSalta(fb)) outbound = outbound || fb;
 
-    if (!sourceLeg || !targetLeg || sourceLeg === targetLeg) {
-      cancelGrouping();
-      return;
+    if (isArrivalToSalta(fa)) inbound = fa;
+    if (isArrivalToSalta(fb)) inbound = inbound || fb;
+
+    // Si no se pudo inferir, usar orden temporal
+    if (!outbound || !inbound) {
+      const da = toDate(fa.departureDateTime);
+      const dbb = toDate(fb.departureDateTime);
+      if (da && dbb) {
+        if (da <= dbb) {
+          outbound = outbound || fa;
+          inbound = inbound || fb;
+        } else {
+          outbound = outbound || fb;
+          inbound = inbound || fa;
+        }
+      } else {
+        outbound = outbound || fa;
+        inbound = inbound || fb;
+      }
     }
 
-    // conservar el más antiguo (por createdAt) para estabilidad de IDs
-    const keep = sourceTrip.createdAt <= targetTrip.createdAt ? sourceTrip : targetTrip;
-    const drop = keep.id === sourceTrip.id ? targetTrip : sourceTrip;
+    // Elegir el doc “principal” a mantener:
+    // Mantener el que tenga menor startDate
+    const aStart = getTripStartDate(a)?.getTime() ?? Number.POSITIVE_INFINITY;
+    const bStart = getTripStartDate(b)?.getTime() ?? Number.POSITIVE_INFINITY;
+    const keep = aStart <= bStart ? a : b;
+    const remove = keep.id === a.id ? b : a;
 
-    const keepNorm = normalizeTripFlights(keep);
-    const dropNorm = normalizeTripFlights(drop);
-
-    const departureFlight = keepNorm.idaFlight || dropNorm.idaFlight || null;
-    const returnFlight = keepNorm.vueltaFlight || dropNorm.vueltaFlight || null;
-
-    const batch = writeBatch(db);
     const keepRef = doc(db, "users", user.uid, "trips", keep.id);
-    const dropRef = doc(db, "users", user.uid, "trips", drop.id);
+    const removeRef = doc(db, "users", user.uid, "trips", remove.id);
 
-    batch.update(keepRef, { departureFlight, returnFlight });
-    batch.delete(dropRef);
+    // Merge purchaseDate: el más antiguo disponible
+    const keepPurchase = toDate((keep as any).purchaseDate)?.getTime();
+    const removePurchase = toDate((remove as any).purchaseDate)?.getTime();
+    const mergedPurchaseDate =
+      keepPurchase && removePurchase
+        ? new Date(Math.min(keepPurchase, removePurchase)).toISOString()
+        : (keep as any).purchaseDate || (remove as any).purchaseDate || new Date().toISOString();
 
-    await batch.commit();
+    await updateDoc(keepRef, {
+      departureFlight: outbound,
+      returnFlight: inbound,
+      purchaseDate: mergedPurchaseDate,
+    });
 
-    cancelGrouping();
+    await deleteDoc(removeRef);
+    // Nota: si remove tenía boarding passes, hoy no los migramos automáticamente.
   };
 
-  // ✅ Auto-agrupación por ventana temporal (sin depender de reserva)
-  useEffect(() => {
+  const onConfirmGrouping = async (targetTrip: Trip) => {
+    if (!groupingState.active || !groupingState.sourceTrip) return;
+
+    try {
+      await mergeTrips(groupingState.sourceTrip, targetTrip);
+    } catch (e) {
+      console.error("Error grouping trips:", e);
+      alert("No se pudo agrupar. Reintenta.");
+    } finally {
+      cancelGrouping();
+    }
+  };
+
+  const onSplitTrip = async (trip: Trip) => {
     if (!user || !db) return;
-    if (!trips.length) return;
+    if (!trip.departureFlight || !trip.returnFlight) return;
+
+    if (!window.confirm("¿Separar este viaje en dos tramos?")) return;
+
+    try {
+      const baseCreatedAt = (trip as any).createdAt || new Date().toISOString();
+      const purchaseDate = (trip as any).purchaseDate || new Date().toISOString();
+
+      // Crear dos nuevos trips (uno ida, uno vuelta) y borrar el original
+      await addDoc(collection(db, "users", user.uid, "trips"), {
+        departureFlight: trip.departureFlight,
+        returnFlight: null,
+        createdAt: baseCreatedAt,
+        purchaseDate,
+      });
+
+      await addDoc(collection(db, "users", user.uid, "trips"), {
+        departureFlight: null,
+        returnFlight: trip.returnFlight,
+        createdAt: baseCreatedAt,
+        purchaseDate,
+      });
+
+      await deleteDoc(doc(db, "users", user.uid, "trips", trip.id));
+
+      // Boarding passes del trip original quedan asociados a un id que ya no existe.
+      // Por ahora los borramos para evitar basura.
+      await deleteBoardingPassesForTrip(user.uid, trip.id);
+    } catch (e) {
+      console.error("Error splitting trip:", e);
+      alert("No se pudo desagrupar. Reintenta.");
+    }
+  };
+
+  // 1) Normalización automática de tramos mal clasificados (llega a SLA => vuelta)
+  useEffect(() => {
+    if (!user || !db || authRuntimeError) return;
     if (processingRef.current) return;
 
-    // Ajustable: ventana máxima para considerar ida y vuelta del mismo viaje
-    const WINDOW_DAYS = 21;
-    const WINDOW_MS = WINDOW_DAYS * 24 * 60 * 60 * 1000;
-
-    // sólo trips “tramo único” (según normalizado)
-    const oneWays = trips
-      .map((trip) => ({ trip, norm: normalizeTripFlights(trip) }))
-      .filter((x) => (Boolean(x.norm.idaFlight) !== Boolean(x.norm.vueltaFlight)));
-
-    const idas = oneWays
-      .filter((x) => x.norm.idaFlight && !x.norm.vueltaFlight)
-      .sort((a, b) => {
-        const ta = new Date(a.norm.idaFlight!.departureDateTime || a.trip.createdAt).getTime();
-        const tb = new Date(b.norm.idaFlight!.departureDateTime || b.trip.createdAt).getTime();
-        return ta - tb;
-      });
-
-    const vueltas = oneWays
-      .filter((x) => x.norm.vueltaFlight && !x.norm.idaFlight)
-      .sort((a, b) => {
-        const ta = new Date(a.norm.vueltaFlight!.departureDateTime || a.trip.createdAt).getTime();
-        const tb = new Date(b.norm.vueltaFlight!.departureDateTime || b.trip.createdAt).getTime();
-        return ta - tb;
-      });
-
-    const usedVueltaTripIds = new Set<string>();
-    const pairs: Array<{ idaTrip: Trip; vueltaTrip: Trip }> = [];
-
-    for (const ida of idas) {
-      const idaTime = new Date(ida.norm.idaFlight!.departureDateTime || ida.trip.createdAt).getTime();
-
-      let best: { vueltaTrip: Trip; diff: number } | null = null;
-
-      for (const v of vueltas) {
-        if (usedVueltaTripIds.has(v.trip.id)) continue;
-
-        const vTime = new Date(v.norm.vueltaFlight!.departureDateTime || v.trip.createdAt).getTime();
-        const diff = vTime - idaTime;
-
-        if (diff < 0) continue;          // vuelta antes que ida
-        if (diff > WINDOW_MS) break;     // como está ordenado, ya no habrá candidatas
-
-        if (!best || diff < best.diff) {
-          best = { vueltaTrip: v.trip, diff };
-        }
-      }
-
-      if (best) {
-        usedVueltaTripIds.add(best.vueltaTrip.id);
-        pairs.push({ idaTrip: ida.trip, vueltaTrip: best.vueltaTrip });
-      }
-    }
-
-    if (!pairs.length) return;
-
-    (async () => {
+    const run = async () => {
+      processingRef.current = true;
       try {
-        processingRef.current = true;
+        const updates: Promise<void>[] = [];
 
-        const batch = writeBatch(db);
+        for (const t of trips) {
+          if (!t?.id) continue;
+          if (!isOneWayTrip(t)) continue;
 
-        for (const { idaTrip, vueltaTrip } of pairs) {
-          const idaNorm = normalizeTripFlights(idaTrip);
-          const vueltaNorm = normalizeTripFlights(vueltaTrip);
+          const { normalized, changed } = normalizeOneWayTrip(t);
+          if (!changed) continue;
 
-          // Conservamos el Trip de la ida como contenedor
-          const keepRef = doc(db, "users", user.uid, "trips", idaTrip.id);
-          const dropRef = doc(db, "users", user.uid, "trips", vueltaTrip.id);
-
-          batch.update(keepRef, {
-            departureFlight: idaNorm.idaFlight || null,
-            returnFlight: vueltaNorm.vueltaFlight || null,
-          });
-
-          batch.delete(dropRef);
+          const ref = doc(db, "users", user.uid, "trips", t.id);
+          updates.push(
+            updateDoc(ref, {
+              departureFlight: normalized.departureFlight ?? null,
+              returnFlight: normalized.returnFlight ?? null,
+            }) as any
+          );
         }
 
-        await batch.commit();
+        if (updates.length) {
+          await Promise.all(updates);
+        }
       } catch (e) {
-        console.error("Auto-grouping failed:", e);
+        console.error("Auto-normalization error:", e);
       } finally {
         processingRef.current = false;
       }
-    })();
-  }, [trips, user]);
+    };
+
+    run();
+  }, [trips, user, authRuntimeError]);
+
+  // 2) Auto-agrupado: detecta pares inversos dentro de ventana temporal y los mergea
+  useEffect(() => {
+    if (!ENABLE_AUTO_GROUPING) return;
+    if (!user || !db || authRuntimeError) return;
+    if (processingRef.current) return;
+
+    const run = async () => {
+      processingRef.current = true;
+      try {
+        const oneWays = trips
+          .filter((t) => isOneWayTrip(t))
+          .map((t) => normalizeOneWayTrip(t).normalized);
+
+        if (oneWays.length < 2) return;
+
+        // Ordenar por fecha para hacer matching estable
+        const sorted = [...oneWays].sort((a, b) => {
+          const sa = getTripStartDate(a)?.getTime() ?? 0;
+          const sb = getTripStartDate(b)?.getTime() ?? 0;
+          return sa - sb;
+        });
+
+        const used = new Set<string>();
+
+        for (let i = 0; i < sorted.length; i++) {
+          const a = sorted[i];
+          if (used.has(a.id)) continue;
+
+          const fa = getSingleFlight(a);
+          const da = fa ? toDate(fa.departureDateTime) : null;
+          if (!fa || !da) continue;
+
+          for (let j = i + 1; j < sorted.length; j++) {
+            const b = sorted[j];
+            if (used.has(b.id)) continue;
+
+            const fb = getSingleFlight(b);
+            const dbb = fb ? toDate(fb.departureDateTime) : null;
+            if (!fb || !dbb) continue;
+
+            // Reglas:
+            // - rutas inversas
+            // - ventana temporal
+            // - idealmente la vuelta sale después de la ida (si se puede)
+            if (!areInverseRoutes(fa, fb)) continue;
+
+            const window = daysBetween(da, dbb);
+            if (window > AUTO_GROUP_WINDOW_DAYS) continue;
+
+            // Condición suave: intentamos que "ida" sea la más temprana
+            // pero si vienen invertidos igual los mergeamos (mergeTrips decide).
+            await mergeTrips(a, b);
+
+            used.add(a.id);
+            used.add(b.id);
+            break;
+          }
+        }
+      } catch (e) {
+        console.error("Auto-grouping error:", e);
+      } finally {
+        processingRef.current = false;
+      }
+    };
+
+    run();
+  }, [trips, user, authRuntimeError]);
 
   /* ------------------------------------------------------------------ */
   /* IMPORTANT: useMemo SIEMPRE ANTES de cualquier return condicional     */
@@ -480,10 +641,10 @@ const App: React.FC = () => {
     return nextTrip.departureFlight || nextTrip.returnFlight || null;
   }, [nextTrip]);
 
-  // ✅ Correcto: no depende del campo, sino de la dirección real
   const nextTripFlightType = useMemo<"ida" | "vuelta">(() => {
-    return inferLegType(nextTripFlight);
-  }, [nextTripFlight]);
+    if (!nextTrip) return "ida";
+    return nextTrip.departureFlight ? "ida" : "vuelta";
+  }, [nextTrip]);
 
   const filteredTrips = useMemo(() => {
     if (!trips?.length) return [];
@@ -629,13 +790,13 @@ const App: React.FC = () => {
             <TripList
               trips={filteredTrips}
               onDeleteTrip={onDeleteTrip}
-              onSplitTrip={async () => {}}
+              onSplitTrip={onSplitTrip}
               listFilter={listFilter}
               nextTripId={nextTrip?.id || null}
               userId={user.uid}
               groupingState={groupingState}
-              onStartGrouping={startGrouping}      // ✅ FIX
-              onConfirmGrouping={confirmGrouping}  // ✅ FIX
+              onStartGrouping={onStartGrouping}
+              onConfirmGrouping={onConfirmGrouping}
             />
           </>
         )}
