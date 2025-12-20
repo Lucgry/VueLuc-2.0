@@ -24,7 +24,7 @@ import { ClockIcon } from "./components/icons/ClockIcon";
 
 import { deleteBoardingPassesForTrip } from "./services/db";
 
-// ✅ NUEVO: normalización ida/vuelta (tu lógica)
+// ✅ normalización ida/vuelta (tu lógica)
 import { normalizeTripFlights } from "./services/tripLeg";
 
 import { onAuthStateChanged, User } from "firebase/auth";
@@ -93,7 +93,10 @@ const safeDate = (iso?: string | null): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
-const daysBetween = (aIso?: string | null, bIso?: string | null): number | null => {
+const daysBetween = (
+  aIso?: string | null,
+  bIso?: string | null
+): number | null => {
   const a = safeDate(aIso);
   const b = safeDate(bIso);
   if (!a || !b) return null;
@@ -106,7 +109,7 @@ const pickOldestIso = (a?: string | null, b?: string | null): string | null => {
   if (!da && !db) return null;
   if (da && !db) return a || null;
   if (!da && db) return b || null;
-  return (da!.getTime() <= db!.getTime()) ? (a || null) : (b || null);
+  return da!.getTime() <= db!.getTime() ? a || null : b || null;
 };
 
 /**
@@ -136,9 +139,7 @@ const AuthErrorScreen: React.FC<{
     <div className="max-w-xl w-full bg-slate-100 dark:bg-slate-800 p-6 rounded-xl shadow">
       <InformationCircleIcon className="w-10 h-10 mx-auto text-red-500" />
       <h1 className="mt-4 text-2xl font-bold">Error de Autenticación</h1>
-      {error.message && (
-        <p className="mt-2 text-sm opacity-80">{error.message}</p>
-      )}
+      {error.message && <p className="mt-2 text-sm opacity-80">{error.message}</p>}
 
       {error.links && (
         <div className="mt-6 space-y-3">
@@ -199,8 +200,7 @@ const App: React.FC = () => {
 
   const [installPromptEvent, setInstallPromptEvent] =
     useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstallBannerVisible, setIsInstallBannerVisible] =
-    useState(false);
+  const [isInstallBannerVisible, setIsInstallBannerVisible] = useState(false);
 
   // refs
   const processingRef = useRef(false);
@@ -320,17 +320,146 @@ const App: React.FC = () => {
     await deleteBoardingPassesForTrip(user.uid, tripId);
   };
 
+  /**
+   * Merge core: dado source (one-way) y target (one-way),
+   * arma un viaje ida/vuelta y lo persiste como:
+   * - updateDoc sobre uno de los docs
+   * - deleteDoc del otro
+   *
+   * Nota: admite que uno de los "trips" todavía no exista en Firestore
+   * (lo representamos como draftFake con id "__draft__"), en cuyo caso
+   * mergea creando/updating sobre el existente.
+   */
+  const mergeTwoTrips = async (source: Trip, target: Trip) => {
+    if (!user || !db) return;
+
+    const sNorm = normalizeTripFlights(source);
+    const tNorm = normalizeTripFlights(target);
+
+    const sLeg = getOneWayLeg(source);
+    const tLeg = getOneWayLeg(target);
+
+    // Guardrail: solo mergeamos si realmente son complementarios (ida + vuelta)
+    if (!sLeg || !tLeg || sLeg === tLeg) return;
+
+    const idaFlight = sLeg === "ida" ? sNorm.idaFlight : tNorm.idaFlight;
+    const vueltaFlight = sLeg === "vuelta" ? sNorm.vueltaFlight : tNorm.vueltaFlight;
+
+    if (!idaFlight || !vueltaFlight) return;
+
+    const mergedPurchaseDate =
+      pickOldestIso(source.purchaseDate || null, target.purchaseDate || null) ||
+      idaFlight.departureDateTime ||
+      new Date().toISOString();
+
+    // Si target es "draft" (no existe en Firestore), siempre mantenemos source.
+    const targetIsDraft = target.id === "__draft__";
+
+    // Elegimos “keep” como el más viejo por createdAt (si existe), para estabilidad visual.
+    // Si target es draft, keep=source.
+    const keep = targetIsDraft
+      ? source
+      : (safeDate(source.createdAt || null)?.getTime() ?? Infinity) <=
+        (safeDate(target.createdAt || null)?.getTime() ?? Infinity)
+      ? source
+      : target;
+
+    const remove = keep.id === source.id ? target : source;
+
+    // Caso A: keep existe en Firestore seguro (o sea, keep no es draft)
+    await updateDoc(doc(db, "users", user.uid, "trips", keep.id), {
+      departureFlight: idaFlight,
+      returnFlight: vueltaFlight,
+      purchaseDate: mergedPurchaseDate,
+      // createdAt NO lo tocamos: mantenemos el del doc “keep”
+    });
+
+    // Caso B: si remove existe en Firestore, lo borramos.
+    // Si remove es draft, no hay nada que borrar.
+    if (remove.id !== "__draft__") {
+      await deleteDoc(doc(db, "users", user.uid, "trips", remove.id));
+      await deleteBoardingPassesForTrip(user.uid, remove.id);
+    }
+  };
+
+  /**
+   * Agregar viaje:
+   * - Primero intentamos auto-merge SOLO en el momento de alta.
+   * - Si no hay match, guardamos el doc nuevo normalmente.
+   */
   const onAddTrip = async (tripData: Omit<Trip, "id" | "createdAt">) => {
     if (!user || !db) return;
 
-    await addDoc(collection(db, "users", user.uid, "trips"), {
-      ...tripData,
-      createdAt: new Date().toISOString(),
-      purchaseDate: tripData.purchaseDate || new Date().toISOString(),
-    });
+    const nowIso = new Date().toISOString();
 
-    setIsModalOpen(false);
-    setIsQuickAddModalOpen(false);
+    // Evitar doble ejecución accidental (doble click, etc.)
+    if (processingRef.current) return;
+    processingRef.current = true;
+
+    try {
+      const draftFake: Trip = {
+        id: "__draft__",
+        createdAt: nowIso,
+        purchaseDate: tripData.purchaseDate || nowIso,
+        departureFlight: tripData.departureFlight ?? null,
+        returnFlight: tripData.returnFlight ?? null,
+      };
+
+      const draftLeg = getOneWayLeg(draftFake);
+
+      // 1) intentamos merge automático SOLO si el nuevo es one-way
+      if (draftLeg) {
+        let bestMatch: { trip: Trip; score: number } | null = null;
+
+        for (const existing of trips) {
+          if (isRoundTrip(existing)) continue;
+
+          const legA = getOneWayLeg(existing);
+          if (!legA) continue;
+
+          // complementarios
+          if (legA === draftLeg) continue;
+
+          const nA = normalizeTripFlights(existing);
+          const nB = normalizeTripFlights(draftFake);
+
+          const fA = legA === "ida" ? nA.idaFlight : nA.vueltaFlight;
+          const fB = draftLeg === "ida" ? nB.idaFlight : nB.vueltaFlight;
+
+          const d = daysBetween(
+            fA?.departureDateTime ?? null,
+            fB?.departureDateTime ?? null
+          );
+
+          if (d != null && d <= AUTO_GROUP_WINDOW_DAYS) {
+            if (!bestMatch || d < bestMatch.score) {
+              bestMatch = { trip: existing, score: d };
+            }
+          }
+        }
+
+        if (bestMatch) {
+          // merge automático: existing + draft
+          await mergeTwoTrips(bestMatch.trip, draftFake);
+
+          setIsModalOpen(false);
+          setIsQuickAddModalOpen(false);
+          return;
+        }
+      }
+
+      // 2) si no hubo merge, guardamos normal
+      await addDoc(collection(db, "users", user.uid, "trips"), {
+        ...tripData,
+        createdAt: nowIso,
+        purchaseDate: tripData.purchaseDate || nowIso,
+      });
+
+      setIsModalOpen(false);
+      setIsQuickAddModalOpen(false);
+    } finally {
+      processingRef.current = false;
+    }
   };
 
   /**
@@ -373,54 +502,6 @@ const App: React.FC = () => {
 
     // Cerrar modo agrupamiento por si estaba activo
     setGroupingState({ active: false, sourceTrip: null });
-  };
-
-  /**
-   * Merge core: dado source (one-way) y target (one-way),
-   * arma un viaje ida/vuelta y lo persiste como:
-   * - updateDoc sobre uno de los docs
-   * - deleteDoc del otro
-   */
-  const mergeTwoTrips = async (source: Trip, target: Trip) => {
-    if (!user || !db) return;
-
-    const sNorm = normalizeTripFlights(source);
-    const tNorm = normalizeTripFlights(target);
-
-    const sLeg = getOneWayLeg(source);
-    const tLeg = getOneWayLeg(target);
-
-    // Guardrail: solo mergeamos si realmente son complementarios (ida + vuelta)
-    if (!sLeg || !tLeg || sLeg === tLeg) return;
-
-    const idaFlight = sLeg === "ida" ? sNorm.idaFlight : tNorm.idaFlight;
-    const vueltaFlight = sLeg === "vuelta" ? sNorm.vueltaFlight : tNorm.vueltaFlight;
-
-    if (!idaFlight || !vueltaFlight) return;
-
-    const mergedPurchaseDate =
-      pickOldestIso(source.purchaseDate || null, target.purchaseDate || null) ||
-      idaFlight.departureDateTime ||
-      new Date().toISOString();
-
-    // Elegimos “keep” como el más viejo por createdAt (si existe), para estabilidad visual
-    const keep =
-      (safeDate(source.createdAt || null)?.getTime() ?? Infinity) <=
-      (safeDate(target.createdAt || null)?.getTime() ?? Infinity)
-        ? source
-        : target;
-
-    const remove = keep.id === source.id ? target : source;
-
-    await updateDoc(doc(db, "users", user.uid, "trips", keep.id), {
-      departureFlight: idaFlight,
-      returnFlight: vueltaFlight,
-      purchaseDate: mergedPurchaseDate,
-      // createdAt NO lo tocamos: mantenemos el del doc “keep”
-    });
-
-    await deleteDoc(doc(db, "users", user.uid, "trips", remove.id));
-    await deleteBoardingPassesForTrip(user.uid, remove.id);
   };
 
   const onStartGrouping = (trip: Trip) => {
@@ -495,73 +576,6 @@ const App: React.FC = () => {
       return true;
     });
   }, [trips, listFilter]);
-
-  /* -------------------- AUTO-GROUP (por ventana temporal) -------------------- */
-  useEffect(() => {
-    if (!user || !db) return;
-    if (groupingState.active) return; // no interferir con el modo manual
-    if (processingRef.current) return;
-
-    // Solo tiene sentido si hay al menos 2 trips
-    if (!trips || trips.length < 2) return;
-
-    const run = async () => {
-      processingRef.current = true;
-      try {
-        // Nos quedamos solo con one-way que NO estén ya roundtrip
-        const oneWays = trips.filter((t) => !isRoundTrip(t) && !!getOneWayLeg(t));
-
-        // Si no hay pares potenciales, listo
-        if (oneWays.length < 2) return;
-
-        // Construimos candidatos (ida vs vuelta) con score = proximidad temporal (días)
-        type Candidate = { a: Trip; b: Trip; score: number };
-
-        const candidates: Candidate[] = [];
-
-        for (let i = 0; i < oneWays.length; i++) {
-          for (let j = i + 1; j < oneWays.length; j++) {
-            const t1 = oneWays[i];
-            const t2 = oneWays[j];
-
-            const leg1 = getOneWayLeg(t1);
-            const leg2 = getOneWayLeg(t2);
-            if (!leg1 || !leg2) continue;
-            if (leg1 === leg2) continue; // guardrail: deben ser complementarios
-
-            // Distancia temporal: usamos departureDateTime del vuelo existente en cada trip
-            const t1Norm = normalizeTripFlights(t1);
-            const t2Norm = normalizeTripFlights(t2);
-
-            const t1Flight: Flight | undefined = leg1 === "ida" ? t1Norm.idaFlight : t1Norm.vueltaFlight;
-            const t2Flight: Flight | undefined = leg2 === "ida" ? t2Norm.idaFlight : t2Norm.vueltaFlight;
-
-            const d = daysBetween(t1Flight?.departureDateTime ?? null, t2Flight?.departureDateTime ?? null);
-            if (d == null) continue;
-
-            if (d <= AUTO_GROUP_WINDOW_DAYS) {
-              candidates.push({ a: t1, b: t2, score: d });
-            }
-          }
-        }
-
-        if (!candidates.length) return;
-
-        // Elegimos el mejor candidato (menor score) y mergeamos UNO por corrida
-        candidates.sort((x, y) => x.score - y.score);
-        const best = candidates[0];
-
-        // Merge
-        await mergeTwoTrips(best.a, best.b);
-      } catch (e) {
-        console.error("Auto-group error:", e);
-      } finally {
-        processingRef.current = false;
-      }
-    };
-
-    run();
-  }, [trips, user, db, groupingState.active]);
 
   /* -------------------- render guards (DESPUÉS de hooks) -------------------- */
 
