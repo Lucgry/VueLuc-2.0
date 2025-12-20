@@ -34,15 +34,11 @@ const extractFirstJsonObject = (text) => {
 
   let depth = 0;
   for (let i = firstBrace; i < cleaned.length; i++) {
-    const char = cleaned[i];
-    if (char === "{") depth++;
-    if (char === "}") depth--;
-
-    if (depth === 0) {
-      return cleaned.slice(firstBrace, i + 1);
-    }
+    const ch = cleaned[i];
+    if (ch === "{") depth++;
+    if (ch === "}") depth--;
+    if (depth === 0) return cleaned.slice(firstBrace, i + 1);
   }
-
   return null;
 };
 
@@ -54,56 +50,54 @@ async function listModels(apiKey) {
   return { status: resp.status, ok: resp.ok, text };
 }
 
-exports.handler = async (event) => {
-  // Preflight CORS
-  if (event.httpMethod === "OPTIONS") {
-    return jsonResponse(200, { ok: true });
+/**
+ * Heurística: recorta el email a “lo probable útil” para vuelos.
+ * Esto mejora MUCHO JetSMART (trae regulaciones larguísimas).
+ */
+function extractRelevantEmailSection(emailText) {
+  if (typeof emailText !== "string") return "";
+
+  const t = emailText;
+
+  // Intento 1: JetSMART típico
+  const jetStart = t.search(/DETALLE\s+RESERVA/i);
+  if (jetStart !== -1) {
+    // Cortamos antes de regulaciones, si aparece
+    const jetEndCandidates = [
+      t.search(/INFORMACI[ÓO]N\s+DE\s+LA\s+AEROL[IÍ]NEA/i),
+      t.search(/REGULACIONES/i),
+      t.search(/Condiciones\s+generales/i),
+      t.search(/Devoluciones/i),
+    ].filter((x) => x !== -1);
+
+    const jetEnd =
+      jetEndCandidates.length > 0 ? Math.min(...jetEndCandidates) : Math.min(t.length, jetStart + 12000);
+
+    return t.slice(Math.max(0, jetStart - 2000), jetEnd);
   }
 
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    return jsonResponse(500, {
-      error: "GOOGLE_API_KEY not set in Netlify env vars",
-    });
+  // Intento 2: Aerolíneas típico
+  const aaStart = t.search(/C[óo]digo\s+de\s+Reserva/i);
+  if (aaStart !== -1) {
+    const aaEndCandidates = [
+      t.search(/Condiciones/i),
+      t.search(/T[ée]rminos/i),
+      t.search(/Aerol[ií]neas\s+Plus/i),
+    ].filter((x) => x !== -1);
+
+    const aaEnd =
+      aaEndCandidates.length > 0 ? Math.min(...aaEndCandidates) : Math.min(t.length, aaStart + 6000);
+
+    return t.slice(Math.max(0, aaStart - 1500), aaEnd);
   }
 
-  // Diagnóstico opcional
-  if (
-    event.httpMethod === "GET" &&
-    event.queryStringParameters?.listModels === "1"
-  ) {
-    try {
-      const { status, ok, text } = await listModels(apiKey);
-      return jsonResponse(status, ok ? JSON.parse(text) : { error: text });
-    } catch (e) {
-      return jsonResponse(500, {
-        error: "ListModels failed",
-        message: e.message || String(e),
-      });
-    }
-  }
+  // Fallback: recortar a un tamaño razonable (evita que “se pierda” en texto infinito)
+  if (t.length > 14000) return t.slice(0, 14000);
+  return t;
+}
 
-  if (event.httpMethod !== "POST") {
-    return jsonResponse(405, { error: "Method Not Allowed. Use POST." });
-  }
-
-  const parsed = safeJsonParse(event.body || "{}");
-  if (!parsed.ok) {
-    return jsonResponse(400, { error: "Invalid JSON body" });
-  }
-
-  const { emailText, pdfBase64 } = parsed.value;
-
-  if (!emailText || typeof emailText !== "string" || !emailText.trim()) {
-    return jsonResponse(400, { error: "emailText is required" });
-  }
-
-  const pdfData =
-    typeof pdfBase64 === "string" && pdfBase64.trim()
-      ? pdfBase64.trim()
-      : null;
-
-  const pdfInstruction = pdfData
+function buildSystemInstruction({ hasPdf }) {
+  const pdfInstruction = hasPdf
     ? `
 DATOS DEL PDF ADJUNTO:
 - Hay un PDF adjunto que puede contener el costo total o facturación.
@@ -111,10 +105,10 @@ DATOS DEL PDF ADJUNTO:
 `.trim()
     : "";
 
-  const instructions = `
+  return `
 Eres un asistente de extracción de datos de vuelos.
-Devuelve ÚNICAMENTE JSON válido.
-NO markdown. NO texto adicional.
+Devuelve ÚNICAMENTE JSON válido (application/json).
+NO markdown. NO texto adicional. NO explicación.
 
 ${pdfInstruction}
 
@@ -139,56 +133,142 @@ ESQUEMA:
 }
 
 REGLAS:
-- NO inventes datos
-- bookingReference es obligatorio
-- Si hay costo total, asignalo al primer vuelo
+- NO inventes datos.
+- bookingReference es obligatorio (ej: "QDVT6H", "OGPLLZ").
+- Si no hay costo por tramo pero sí costo total, asignalo al primer vuelo y deja el segundo sin cost (o null).
+- Si falta paymentMethod, dejarlo como "" o null.
+- Si hay dos tramos, devolver dos objetos en flights.
 `.trim();
+}
 
-  const prompt = `
-${instructions}
+async function callGemini({ apiKey, model, systemInstruction, emailText, pdfData }) {
+  const resp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        // Recomendado: instrucciones separadas del contenido del usuario
+        system_instruction: {
+          parts: [{ text: systemInstruction }],
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: emailText },
+              ...(pdfData
+                ? [
+                    {
+                      inlineData: {
+                        mimeType: "application/pdf",
+                        data: pdfData,
+                      },
+                    },
+                  ]
+                : []),
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 2048,
+          // CLAVE: fuerza que el modelo devuelva JSON parseable
+          responseMimeType: "application/json",
+        },
+      }),
+    }
+  );
 
-EMAIL:
----
-${emailText}
----
-`.trim();
+  const rawText = await resp.text();
+  return { resp, rawText };
+}
+
+function extractCandidateText(wrapperValue) {
+  const parts = wrapperValue?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts) || parts.length === 0) return null;
+
+  // Unimos todos los textos, por si viene fragmentado
+  const joined = parts
+    .map((p) => (typeof p?.text === "string" ? p.text : ""))
+    .join("\n")
+    .trim();
+
+  return joined || null;
+}
+
+function parseModelOutputToJson(candidateText) {
+  if (!candidateText) return { ok: false, error: new Error("empty candidateText") };
+
+  // 1) Intento directo (si responseMimeType funciona, esto suele pasar)
+  const direct = safeJsonParse(candidateText);
+  if (direct.ok) return direct;
+
+  // 2) Intento por extracción de { ... }
+  const jsonBlock = extractFirstJsonObject(candidateText);
+  if (!jsonBlock) {
+    return { ok: false, error: new Error("No JSON object found") };
+  }
+  const extracted = safeJsonParse(jsonBlock);
+  if (extracted.ok) return extracted;
+
+  return { ok: false, error: extracted.error || new Error("Invalid extracted JSON") };
+}
+
+exports.handler = async (event) => {
+  // Preflight CORS
+  if (event.httpMethod === "OPTIONS") {
+    return jsonResponse(200, { ok: true });
+  }
+
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    return jsonResponse(500, { error: "GOOGLE_API_KEY not set in Netlify env vars" });
+  }
+
+  // Diagnóstico opcional
+  if (event.httpMethod === "GET" && event.queryStringParameters?.listModels === "1") {
+    try {
+      const { status, ok, text } = await listModels(apiKey);
+      return jsonResponse(status, ok ? JSON.parse(text) : { error: text });
+    } catch (e) {
+      return jsonResponse(500, { error: "ListModels failed", message: e.message || String(e) });
+    }
+  }
+
+  if (event.httpMethod !== "POST") {
+    return jsonResponse(405, { error: "Method Not Allowed. Use POST." });
+  }
+
+  const parsed = safeJsonParse(event.body || "{}");
+  if (!parsed.ok) {
+    return jsonResponse(400, { error: "Invalid JSON body" });
+  }
+
+  const { emailText, pdfBase64 } = parsed.value;
+
+  if (!emailText || typeof emailText !== "string" || !emailText.trim()) {
+    return jsonResponse(400, { error: "emailText is required" });
+  }
+
+  const pdfData =
+    typeof pdfBase64 === "string" && pdfBase64.trim() ? pdfBase64.trim() : null;
+
+  const model = "gemini-2.5-flash";
+  const sys = buildSystemInstruction({ hasPdf: !!pdfData });
+
+  // Intento 1: email completo (pero con un recorte defensivo si es enorme)
+  const primaryEmail = extractRelevantEmailSection(emailText);
 
   try {
-    const model = "gemini-2.5-flash";
-
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { text: prompt },
-                ...(pdfData
-                  ? [
-                      {
-                        inlineData: {
-                          mimeType: "application/pdf",
-                          data: pdfData,
-                        },
-                      },
-                    ]
-                  : []),
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0,
-            maxOutputTokens: 2048,
-          },
-        }),
-      }
-    );
-
-    const rawText = await resp.text();
+    // --- Attempt #1 ---
+    const { resp, rawText } = await callGemini({
+      apiKey,
+      model,
+      systemInstruction: sys,
+      emailText: primaryEmail,
+      pdfData,
+    });
 
     if (!resp.ok) {
       return jsonResponse(resp.status, {
@@ -198,7 +278,6 @@ ${emailText}
       });
     }
 
-    // 1) Parse wrapper Gemini
     const wrapper = safeJsonParse(rawText);
     if (!wrapper.ok) {
       return jsonResponse(502, {
@@ -207,40 +286,65 @@ ${emailText}
       });
     }
 
-    // 2) Extraer texto del modelo
-    const candidateText =
-      wrapper.value?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const candidateText = extractCandidateText(wrapper.value);
+    const parsedOut = parseModelOutputToJson(candidateText);
 
-    if (!candidateText) {
-      return jsonResponse(502, {
-        error: "Gemini response missing content text",
-        details: JSON.stringify(wrapper.value).slice(0, 800),
+    // --- Retry #2 si falló ---
+    if (!parsedOut.ok) {
+      // Prompt aún más “duro” + recorte más agresivo (solo lo central)
+      const retryEmail = extractRelevantEmailSection(primaryEmail);
+
+      const strictSys = `${sys}
+
+IMPORTANTE:
+- Si el email contiene regulaciones, IGNORALAS.
+- Concentrate SOLO en el itinerario / detalle de reserva.
+- RESPONDE SOLO JSON.`;
+
+      const r2 = await callGemini({
+        apiKey,
+        model,
+        systemInstruction: strictSys,
+        emailText: retryEmail,
+        pdfData,
       });
+
+      const raw2 = await r2.rawText;
+
+      if (!r2.resp.ok) {
+        return jsonResponse(r2.resp.status, {
+          error: "Gemini API error (retry)",
+          modelUsed: model,
+          details: raw2.slice(0, 2000),
+        });
+      }
+
+      const w2 = safeJsonParse(raw2);
+      if (!w2.ok) {
+        return jsonResponse(502, {
+          error: "Gemini wrapper is not valid JSON (retry)",
+          details: raw2.slice(0, 800),
+        });
+      }
+
+      const ct2 = extractCandidateText(w2.value);
+      const out2 = parseModelOutputToJson(ct2);
+
+      if (!out2.ok) {
+        return jsonResponse(502, {
+          error: "No JSON object found in Gemini content",
+          details: (ct2 || "").slice(0, 1200),
+        });
+      }
+
+      return jsonResponse(200, out2.value);
     }
 
-    // 3) Extraer JSON real
-    const jsonBlock = extractFirstJsonObject(candidateText);
-    if (!jsonBlock) {
-      return jsonResponse(502, {
-        error: "No JSON object found in Gemini content",
-        details: candidateText.slice(0, 800),
-      });
-    }
-
-    // 4) Parse final
-    const finalJson = safeJsonParse(jsonBlock);
-    if (!finalJson.ok) {
-      return jsonResponse(502, {
-        error: "Extracted JSON is invalid",
-        details: jsonBlock.slice(0, 800),
-      });
-    }
-
-    return jsonResponse(200, finalJson.value);
+    return jsonResponse(200, parsedOut.value);
   } catch (err) {
     return jsonResponse(500, {
       error: "Function crashed",
-      message: err.message || String(err),
+      message: err?.message || String(err),
     });
   }
 };
