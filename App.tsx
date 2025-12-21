@@ -557,25 +557,37 @@ const App: React.FC = () => {
   }, [nextTrip]);
 
   const filteredTrips = useMemo(() => {
-    if (!trips?.length) return [];
-    const now = new Date();
+  if (!trips?.length) return [];
+  const now = new Date();
 
-    return trips.filter((t) => {
-      const s = getTripStartDate(t);
-      const e = getTripEndDate(t);
+  const filtered = [...trips].filter((t) => {
+    const s = getTripStartDate(t);
+    const e = getTripEndDate(t);
 
-      if (listFilter === "future") return !!e && e >= now;
-      if (listFilter === "completed") return !!e && e < now;
-      if (listFilter === "currentMonth")
-        return (
-          !!s &&
-          s.getMonth() === now.getMonth() &&
-          s.getFullYear() === now.getFullYear()
-        );
+    if (listFilter === "future") return !!e && e >= now;
+    if (listFilter === "completed") return !!e && e < now;
+    if (listFilter === "currentMonth")
+      return (
+        !!s &&
+        s.getMonth() === now.getMonth() &&
+        s.getFullYear() === now.getFullYear()
+      );
 
-      return true;
-    });
-  }, [trips, listFilter]);
+    return true;
+  });
+
+  // 🔑 ORDEN CRONOLÓGICO REAL (por fecha del viaje, no createdAt)
+  filtered.sort((a, b) => {
+    const sa = getTripStartDate(a)?.getTime() ?? Number.POSITIVE_INFINITY;
+    const sb = getTripStartDate(b)?.getTime() ?? Number.POSITIVE_INFINITY;
+    return sa - sb;
+  });
+
+  // Opcional: completados del más reciente al más antiguo
+  if (listFilter === "completed") filtered.reverse();
+
+  return filtered;
+}, [trips, listFilter]);
 
   /* -------------------- render guards (DESPUÉS de hooks) -------------------- */
 
