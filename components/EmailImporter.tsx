@@ -93,8 +93,7 @@ const buildAiInput = (raw: string): string => {
 
   const startIdx = idxs.length ? idxs[0] : 0;
 
-  // 3) Cortes típicos para evitar “ruido” largo:
-  //    Ojo: Aerolíneas a veces trae “Equipaje” luego del ticket; cortar ahí suele estar bien.
+  // 3) Cortes típicos para evitar “ruido” largo
   const cutMarkers = [
     "condiciones generales",
     "condiciones",
@@ -249,9 +248,6 @@ const EmailImporter: React.FC<EmailImporterProps> = ({
             {isLoading ? <Spinner /> : "Procesar"}
           </button>
         </div>
-
-        {/* Debug opcional: descomentá si querés ver el prompt */}
-        {/* <pre className="mt-4 text-xs whitespace-pre-wrap opacity-80">{aiInput}</pre> */}
       </div>
     </div>
   );
