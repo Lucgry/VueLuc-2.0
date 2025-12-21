@@ -33,6 +33,7 @@ const buildAiInput = (raw: string): string => {
     .replace(/[ \t]+\n/g, "\n")
     .trim();
 
+  // Limpieza básica de “ruido” Gmail
   const stripped = normalized
     .replace(/^Conversación abierta\..*?\n+/im, "")
     .replace(/^Ir al contenido.*?\n+/im, "")
@@ -41,35 +42,105 @@ const buildAiInput = (raw: string): string => {
     .trim();
 
   const lower = stripped.toLowerCase();
-  const idxDetalle = lower.indexOf("detalle reserva");
-  const startIdx = idxDetalle >= 0 ? idxDetalle : 0;
 
+  // 1) Fecha de referencia del email (si aparece "14 dic 2025")
+  //    Sirve para inferir el año cuando el itinerario trae "lunes, 22 diciembre" sin año.
+  const monthMap: Record<string, string> = {
+    ene: "01",
+    feb: "02",
+    mar: "03",
+    abr: "04",
+    may: "05",
+    jun: "06",
+    jul: "07",
+    ago: "08",
+    sep: "09",
+    sept: "09",
+    oct: "10",
+    nov: "11",
+    dic: "12",
+  };
+
+  let referenceDateIso: string | null = null;
+  const dm = stripped.match(
+    /(\b\d{1,2}\b)\s+(ene|feb|mar|abr|may|jun|jul|ago|sep|sept|oct|nov|dic)\s+(\d{4})/i
+  );
+  if (dm) {
+    const day = dm[1].padStart(2, "0");
+    const mon = monthMap[dm[2].toLowerCase()];
+    const year = dm[3];
+    if (mon) referenceDateIso = `${year}-${mon}-${day}`;
+  }
+
+  // 2) Elegir inicio del bloque útil:
+  //    - JetSMART: “detalle reserva”
+  //    - Aerolíneas: “código de reserva” / “número de vuelo” / “información de tu reserva”
+  const markers = [
+    "detalle reserva",
+    "itinerario de su reserva",
+    "código de reserva",
+    "codigo de reserva",
+    "número de vuelo",
+    "numero de vuelo",
+    "información de tu reserva",
+    "informacion de tu reserva",
+  ];
+
+  const idxs = markers
+    .map((k) => lower.indexOf(k))
+    .filter((i) => i >= 0)
+    .sort((a, b) => a - b);
+
+  const startIdx = idxs.length ? idxs[0] : 0;
+
+  // 3) Cortes típicos para evitar “ruido” largo:
+  //    Ojo: Aerolíneas a veces trae “Equipaje” luego del ticket; cortar ahí suele estar bien.
   const cutMarkers = [
-    "regulaciones",
+    "condiciones generales",
     "condiciones",
+    "regulaciones",
     "check-in",
     "equipaje",
     "devoluciones",
+    "seguinos",
+    "descargá nuestra app",
+    "descarga nuestra app",
+    "aerolíneas plus",
+    "aerolineas plus",
+    "hotel",
+    "auto",
+    "asistencia al viajero",
   ];
 
   let endIdx = stripped.length;
-  for (const m of cutMarkers) {
-    const i = lower.indexOf(m, startIdx);
+  for (const mk of cutMarkers) {
+    const i = lower.indexOf(mk, Math.max(0, startIdx));
     if (i >= 0) endIdx = Math.min(endIdx, i);
   }
 
   const core = stripped.slice(startIdx, endIdx).trim();
 
+  // 4) Reglas específicas (incluye año por defecto si falta)
   const rules = [
     "REGLAS OBLIGATORIAS:",
     "- Extraer TODOS los tramos como vuelos individuales.",
     "- IDA = ORIGEN SLA. VUELTA = DESTINO SLA.",
-    "- No asumir orden.",
-    "- Manejar cruces de medianoche correctamente.",
-    "- Devolver SOLO JSON válido.",
-  ].join("\n");
+    "- No asumir orden (un mail puede listar primero la vuelta).",
+    "- bookingReference (código de reserva) es obligatorio si aparece.",
+    "- Si la fecha NO incluye año: usar el AÑO de la FECHA DE REFERENCIA DEL EMAIL.",
+    "- Los meses/días pueden venir en español (ej: 'lunes, 22 diciembre').",
+    "- Manejar cruces de medianoche correctamente:",
+    "  - Si arrivalHour < departureHour y no hay fecha explícita de llegada, sumar 1 día a la llegada.",
+    "- Devolver SOLO JSON válido (sin texto extra).",
+    referenceDateIso ? `FECHA DE REFERENCIA DEL EMAIL: ${referenceDateIso}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
-  return [rules, "", core || stripped].join("\n");
+  // Fallback acotado por si el core queda vacío o muy raro
+  const fallback = stripped.length > 8000 ? stripped.slice(0, 8000) : stripped;
+
+  return [rules, "", "CONTENIDO PRINCIPAL:", core || fallback].join("\n");
 };
 
 /* ------------------------------------------------------------------ */
@@ -102,11 +173,7 @@ const EmailImporter: React.FC<EmailImporterProps> = ({
       const pdfBase64 = pdfFile ? await fileToBase64(pdfFile) : null;
 
       // ✅ CONTRATO CORRECTO: devuelve UN Trip
-      const newTrip = await parseFlightEmail(
-        apiKey,
-        aiInput,
-        pdfBase64
-      );
+      const newTrip = await parseFlightEmail(apiKey, aiInput, pdfBase64);
 
       await onAddTrip(newTrip);
       onClose();
@@ -182,6 +249,9 @@ const EmailImporter: React.FC<EmailImporterProps> = ({
             {isLoading ? <Spinner /> : "Procesar"}
           </button>
         </div>
+
+        {/* Debug opcional: descomentá si querés ver el prompt */}
+        {/* <pre className="mt-4 text-xs whitespace-pre-wrap opacity-80">{aiInput}</pre> */}
       </div>
     </div>
   );
