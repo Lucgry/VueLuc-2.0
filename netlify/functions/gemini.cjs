@@ -86,22 +86,40 @@ function extractRelevantEmailSection(emailText) {
   }
 
   // Aerolineas typical
-  var aaStart = t.search(/C[óo]digo\s+de\s+Reserva/i);
+  // Puede aparecer "Información de tu reserva" antes de "Código de Reserva"
+  var aaStart = t.search(/Informaci[óo]n\s+de\s+tu\s+reserva/i);
+  if (aaStart === -1) {
+    aaStart = t.search(/C[óo]digo\s+de\s+Reserva/i);
+  }
+  if (aaStart === -1) {
+    aaStart = t.search(/N[úu]mero\s+de\s+vuelo/i);
+  }
+
   if (aaStart !== -1) {
     var candidates2 = [];
     var e = t.search(/Condiciones/i);
     var f = t.search(/T[ée]rminos/i);
     var g = t.search(/Aerol[ií]neas\s+Plus/i);
 
+    // cortes típicos de cola en Aerolíneas
+    var h = t.search(/Equipaje/i);
+    var i2 = t.search(/Seguinos/i);
+    var j2 = t.search(/Descarg[aá]\s+nuestra\s+app/i);
+    var k2 = t.search(/Condiciones\s+generales/i);
+
     if (e !== -1) candidates2.push(e);
     if (f !== -1) candidates2.push(f);
     if (g !== -1) candidates2.push(g);
+    if (h !== -1) candidates2.push(h);
+    if (i2 !== -1) candidates2.push(i2);
+    if (j2 !== -1) candidates2.push(j2);
+    if (k2 !== -1) candidates2.push(k2);
 
     var aaEnd = t.length;
     if (candidates2.length > 0) {
       aaEnd = Math.min.apply(null, candidates2);
     } else {
-      aaEnd = Math.min(t.length, aaStart + 6000);
+      aaEnd = Math.min(t.length, aaStart + 7000);
     }
 
     var from2 = Math.max(0, aaStart - 1500);
@@ -123,11 +141,11 @@ function buildSystemInstruction(hasPdf) {
   }
 
   return (
-    "Eres un asistente de extraccion de datos de vuelos.\n" +
+    "Eres un asistente de extraccion de datos de vuelos a partir de emails.\n" +
     "Devuelve UNICAMENTE JSON valido (application/json).\n" +
     "NO markdown. NO texto adicional. NO explicacion.\n\n" +
     pdfInstruction +
-    "\nESQUEMA:\n" +
+    "\nESQUEMA (NO CAMBIAR NOMBRES DE CLAVES):\n" +
     "{\n" +
     '  "flights": [\n' +
     "    {\n" +
@@ -149,9 +167,13 @@ function buildSystemInstruction(hasPdf) {
     "REGLAS:\n" +
     "- NO inventes datos.\n" +
     "- bookingReference es obligatorio (ej: QDVT6H, OGPLLZ).\n" +
+    "- Extraer TODOS los tramos como objetos en flights.\n" +
+    "- Si hay dos tramos, devolver dos objetos en flights.\n" +
+    "- Los meses/días pueden venir en español (ej: 'lunes, 22 diciembre').\n" +
+    "- Si la fecha de un vuelo NO incluye año, inferilo usando la 'FECHA DE REFERENCIA DEL EMAIL' si aparece en el texto.\n" +
+    "- Manejar cruces de medianoche: si arrivalHour < departureHour y NO hay fecha explícita de llegada, sumar 1 día a la fecha de llegada.\n" +
     "- Si no hay costo por tramo pero si costo total, asignalo al primer vuelo y deja el segundo sin cost (o null).\n" +
-    "- Si falta paymentMethod, dejarlo como \"\" o null.\n" +
-    "- Si hay dos tramos, devolver dos objetos en flights.\n"
+    "- Si falta paymentMethod, dejarlo como \"\" o null.\n"
   );
 }
 
@@ -327,6 +349,7 @@ exports.handler = async function (event) {
         "\nIMPORTANTE:\n" +
         "- Si el email contiene regulaciones, IGNORALAS.\n" +
         "- Concentrate SOLO en el itinerario / detalle de reserva.\n" +
+        "- Si la fecha del itinerario no incluye año, usa el año de FECHA DE REFERENCIA DEL EMAIL si está presente.\n" +
         "- RESPONDE SOLO JSON.\n";
 
       var r2 = await callGemini({
