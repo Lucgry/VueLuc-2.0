@@ -52,7 +52,7 @@ const normalizeFlights = (
   for (const f of flights) {
     const depOk = !!f?.departureDateTime && isValidDate(f.departureDateTime);
 
-    // Criterio mínimo alineado con tu interfaz Flight
+    // ✅ Criterio mínimo alineado con tu interfaz Flight
     const oriOk = !!f?.departureAirportCode;
     const dstOk = !!f?.arrivalAirportCode;
 
@@ -115,7 +115,10 @@ export const parseFlightEmail = async (
       throw new Error(hint);
     }
 
-    // 2) purchaseDate robusto
+    // 2) Fecha de compra (fallback robusto)
+    //    - Si purchaseDate viene y es válida, usarla
+    //    - Sino usar la menor departureDateTime válida
+    //    - Sino ahora (último recurso)
     let purchaseDate: string;
     if (aiResponse.purchaseDate && isValidDate(aiResponse.purchaseDate)) {
       purchaseDate = String(aiResponse.purchaseDate);
@@ -134,8 +137,10 @@ export const parseFlightEmail = async (
 
     /**
      * Agrupación:
-     * - Solo agrupa vuelos INTERNOS al mail
-     * - Agrupa SOLO vuelos válidos
+     * - NO se decide acá si deben unirse viajes existentes
+     * - Solo se agrupan vuelos INTERNOS al mail
+     *
+     * Importante: agrupamos SOLO vuelos válidos para no contaminar el grouping.
      */
     const groups = groupFlightsIntoTrips(validFlights);
 
@@ -144,14 +149,15 @@ export const parseFlightEmail = async (
     }
 
     /**
-     * Grupo principal:
-     * - el grupo con fecha válida más próxima
-     * - si todos fueran Infinity (raro), fallback a groups[0]
+     * ✅ ELECCIÓN CORRECTA DEL GRUPO PRINCIPAL
+     * - Se elige el grupo con FECHA MÁS PRÓXIMA (válida)
+     * - Evita que Infinity gane por accidente
      */
     const primary =
       [...groups]
         .filter((g) => Number.isFinite(getGroupStartMs(g)))
-        .sort((a, b) => getGroupStartMs(a) - getGroupStartMs(b))[0] || groups[0];
+        .sort((a, b) => getGroupStartMs(a) - getGroupStartMs(b))[0] ||
+      groups[0];
 
     if (!primary || (!primary.outbound && !primary.inbound)) {
       throw new Error("No se pudo determinar un grupo de vuelo válido.");
