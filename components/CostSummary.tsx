@@ -45,6 +45,24 @@ const getTripEndDate = (trip: Trip): Date | null => {
   return dateStr ? new Date(dateStr) : null;
 };
 
+const safeDate = (iso?: string | null): Date | null => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+/**
+ * Considera un tramo "completado" usando:
+ * - arrivalDateTime si está
+ * - fallback a departureDateTime si arrivalDateTime falta (caso frecuente en parseos)
+ */
+const isLegCompleted = (flight: Flight | null, now: Date): boolean => {
+  if (!flight) return false;
+  const end = safeDate(flight.arrivalDateTime) ?? safeDate(flight.departureDateTime);
+  if (!end) return false;
+  return end < now;
+};
+
 /**
  * Devuelve SOLO uno de los 6 métodos permitidos.
  * Todo lo demás se ignora (null) para evitar "Debito", "Tarjeta de crédito", etc.
@@ -122,23 +140,14 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     });
   }, [trips, selectedYear]);
 
-  // Tramos completados (ida + vuelta), no "viajes"
+  // ✅ Tramos completados (ida + vuelta), con fallback a departureDateTime si falta arrivalDateTime
   const completedLegsForYear = useMemo(() => {
     const now = new Date();
     let count = 0;
 
     for (const trip of tripsForSelectedYear) {
-      // ida completada
-      if (trip.departureFlight?.arrivalDateTime) {
-        const end = new Date(trip.departureFlight.arrivalDateTime);
-        if (!isNaN(end.getTime()) && end < now) count += 1;
-      }
-
-      // vuelta completada
-      if (trip.returnFlight?.arrivalDateTime) {
-        const end = new Date(trip.returnFlight.arrivalDateTime);
-        if (!isNaN(end.getTime()) && end < now) count += 1;
-      }
+      if (isLegCompleted(trip.departureFlight, now)) count += 1;
+      if (isLegCompleted(trip.returnFlight, now)) count += 1;
     }
 
     return count;
@@ -167,10 +176,22 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
       });
     });
 
-    // Orden por monto (como estabas usando)
-    return Object.entries(costsByMethod)
-      .map(([method, total]) => ({ method, total }))
-      .sort((a, b) => b.total - a.total);
+    // ✅ Solo los 6 métodos, en orden fijo (para que no se “desordene”)
+    const ORDER = [
+      "Crédito Yoy",
+      "Crédito Ciudad",
+      "Crédito Macro",
+      "Débito Ciudad",
+      "Débito Macro",
+      "Débito Nación",
+    ] as const;
+
+    return ORDER.filter((method) => (costsByMethod[method] || 0) > 0).map(
+      (method) => ({
+        method,
+        total: costsByMethod[method] || 0,
+      })
+    );
   }, [tripsForSelectedYear]);
 
   const monthlyBreakdown = useMemo(() => {
