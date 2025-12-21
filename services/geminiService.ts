@@ -21,12 +21,6 @@ const toMsOrInfinity = (value: any): number => {
   return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
 };
 
-/**
- * Elige el "inicio" de un grupo:
- * - outbound.departureDateTime
- * - inbound.departureDateTime
- * - Infinity si ninguna fecha es válida
- */
 const getGroupStartMs = (group: any): number => {
   const dt =
     group?.outbound?.departureDateTime ||
@@ -37,12 +31,6 @@ const getGroupStartMs = (group: any): number => {
   return toMsOrInfinity(dt);
 };
 
-/**
- * Normaliza flights para evitar que una fecha inválida rompa todo el pipeline.
- * - Si departureDateTime inválido, NO lo repara (eso debe venir bien del modelo),
- *   pero permite descartar vuelos inservibles en el agrupado.
- * - Mantiene el resto del objeto intacto.
- */
 const normalizeFlights = (
   flights: Flight[]
 ): { valid: Flight[]; invalid: Flight[] } => {
@@ -51,8 +39,6 @@ const normalizeFlights = (
 
   for (const f of flights) {
     const depOk = !!f?.departureDateTime && isValidDate(f.departureDateTime);
-
-    // ✅ Criterio mínimo alineado con tu interfaz Flight
     const oriOk = !!f?.departureAirportCode;
     const dstOk = !!f?.arrivalAirportCode;
 
@@ -63,11 +49,47 @@ const normalizeFlights = (
   return { valid, invalid };
 };
 
+// Regla de negocio: IDA sale de SLA; VUELTA llega a SLA.
+// Si hay dos vuelos en un grupo, asigna ida/vuelta por aeropuerto.
+const assignLegsBySLA = (
+  a: Flight | null,
+  b: Flight | null
+): { departureFlight: Flight | null; returnFlight: Flight | null } => {
+  const isSLA = (code: string | null) => (code || "").toUpperCase() === "SLA";
+
+  if (a && b) {
+    const aFromSLA = isSLA(a.departureAirportCode);
+    const bFromSLA = isSLA(b.departureAirportCode);
+
+    if (aFromSLA && !bFromSLA) return { departureFlight: a, returnFlight: b };
+    if (bFromSLA && !aFromSLA) return { departureFlight: b, returnFlight: a };
+
+    // Fallback: más temprano como ida
+    return toMsOrInfinity(a.departureDateTime) <= toMsOrInfinity(b.departureDateTime)
+      ? { departureFlight: a, returnFlight: b }
+      : { departureFlight: b, returnFlight: a };
+  }
+
+  // Si hay uno solo: lo ponemos en ida si sale de SLA; si no, en vuelta.
+  if (a && !b) {
+    return isSLA(a.departureAirportCode)
+      ? { departureFlight: a, returnFlight: null }
+      : { departureFlight: null, returnFlight: a };
+  }
+  if (!a && b) {
+    return isSLA(b.departureAirportCode)
+      ? { departureFlight: b, returnFlight: null }
+      : { departureFlight: null, returnFlight: b };
+  }
+
+  return { departureFlight: null, returnFlight: null };
+};
+
 export const parseFlightEmail = async (
   _apiKey: string, // compatibilidad (no se usa)
   emailText: string,
   pdfBase64?: string | null
-): Promise<Omit<Trip, "id" | "createdAt">> => {
+): Promise<Array<Omit<Trip, "id" | "createdAt">>> => {
   if (!emailText || typeof emailText !== "string") {
     throw new Error("El texto del correo (emailText) es obligatorio.");
   }
@@ -85,8 +107,7 @@ export const parseFlightEmail = async (
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      const msg =
-        data?.error || `Error llamando a Gemini (status ${res.status})`;
+      const msg = data?.error || `Error llamando a Gemini (status ${res.status})`;
       throw new Error(msg);
     }
 
@@ -95,17 +116,14 @@ export const parseFlightEmail = async (
     if (!aiResponse || !Array.isArray(aiResponse.flights)) {
       throw new Error("Respuesta inválida de la IA: falta 'flights'.");
     }
-
     if (aiResponse.flights.length === 0) {
       throw new Error("La IA no pudo encontrar vuelos en el correo.");
     }
 
-    // 1) Normalizar: separar vuelos válidos vs inválidos
     const { valid: validFlights, invalid: invalidFlights } = normalizeFlights(
       aiResponse.flights
     );
 
-    // Si la IA devolvió cosas pero ninguna es utilizable, devolvemos un error con pista clara
     if (validFlights.length === 0) {
       const sample = invalidFlights?.[0] as any;
       const hint =
@@ -115,61 +133,45 @@ export const parseFlightEmail = async (
       throw new Error(hint);
     }
 
-    // 2) Fecha de compra (fallback robusto)
-    //    - Si purchaseDate viene y es válida, usarla
-    //    - Sino usar la menor departureDateTime válida
-    //    - Sino ahora (último recurso)
+    // purchaseDate robusto
     let purchaseDate: string;
     if (aiResponse.purchaseDate && isValidDate(aiResponse.purchaseDate)) {
       purchaseDate = String(aiResponse.purchaseDate);
     } else {
       const sortedByDep = [...validFlights].sort(
         (a, b) =>
-          toMsOrInfinity(a.departureDateTime) -
-          toMsOrInfinity(b.departureDateTime)
+          toMsOrInfinity(a.departureDateTime) - toMsOrInfinity(b.departureDateTime)
       );
       purchaseDate =
-        sortedByDep[0]?.departureDateTime &&
-        isValidDate(sortedByDep[0].departureDateTime)
+        sortedByDep[0]?.departureDateTime && isValidDate(sortedByDep[0].departureDateTime)
           ? String(sortedByDep[0].departureDateTime)
           : new Date().toISOString();
     }
 
-    /**
-     * Agrupación:
-     * - NO se decide acá si deben unirse viajes existentes
-     * - Solo se agrupan vuelos INTERNOS al mail
-     *
-     * Importante: agrupamos SOLO vuelos válidos para no contaminar el grouping.
-     */
+    // ✅ Aquí está el cambio: en vez de elegir 1, devolvemos TODOS los grupos
     const groups = groupFlightsIntoTrips(validFlights);
-
     if (!groups || groups.length === 0) {
       throw new Error("No se pudo agrupar ningún vuelo del correo.");
     }
 
-    /**
-     * ✅ ELECCIÓN CORRECTA DEL GRUPO PRINCIPAL
-     * - Se elige el grupo con FECHA MÁS PRÓXIMA (válida)
-     * - Evita que Infinity gane por accidente
-     */
-    const primary =
-      [...groups]
-        .filter((g) => Number.isFinite(getGroupStartMs(g)))
-        .sort((a, b) => getGroupStartMs(a) - getGroupStartMs(b))[0] ||
-      groups[0];
+    // Ordenarlos para que se importen “en orden”
+    const ordered = [...groups].sort((a, b) => getGroupStartMs(a) - getGroupStartMs(b));
 
-    if (!primary || (!primary.outbound && !primary.inbound)) {
-      throw new Error("No se pudo determinar un grupo de vuelo válido.");
-    }
+    const trips: Array<Omit<Trip, "id" | "createdAt">> = ordered.map((g) => {
+      const a = g.outbound ?? null;
+      const b = g.inbound ?? null;
 
-    const finalTrip: Omit<Trip, "id" | "createdAt"> = {
-      departureFlight: primary.outbound ?? null,
-      returnFlight: primary.inbound ?? null,
-      purchaseDate,
-    };
+      const { departureFlight, returnFlight } = assignLegsBySLA(a, b);
 
-    return finalTrip;
+      return {
+        departureFlight,
+        returnFlight,
+        purchaseDate,
+      };
+    });
+
+    // Filtrar completamente vacíos por seguridad
+    return trips.filter((t) => t.departureFlight || t.returnFlight);
   } catch (error: any) {
     console.error("Error procesando el email con Gemini:", error);
     throw new Error(
