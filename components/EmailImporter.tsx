@@ -33,7 +33,6 @@ const buildAiInput = (raw: string): string => {
     .replace(/[ \t]+\n/g, "\n")
     .trim();
 
-  // Limpieza básica de “ruido” Gmail
   const stripped = normalized
     .replace(/^Conversación abierta\..*?\n+/im, "")
     .replace(/^Ir al contenido.*?\n+/im, "")
@@ -43,38 +42,7 @@ const buildAiInput = (raw: string): string => {
 
   const lower = stripped.toLowerCase();
 
-  // 1) Fecha de referencia del email (si aparece "14 dic 2025")
-  //    Sirve para inferir el año cuando el itinerario trae "lunes, 22 diciembre" sin año.
-  const monthMap: Record<string, string> = {
-    ene: "01",
-    feb: "02",
-    mar: "03",
-    abr: "04",
-    may: "05",
-    jun: "06",
-    jul: "07",
-    ago: "08",
-    sep: "09",
-    sept: "09",
-    oct: "10",
-    nov: "11",
-    dic: "12",
-  };
-
-  let referenceDateIso: string | null = null;
-  const dm = stripped.match(
-    /(\b\d{1,2}\b)\s+(ene|feb|mar|abr|may|jun|jul|ago|sep|sept|oct|nov|dic)\s+(\d{4})/i
-  );
-  if (dm) {
-    const day = dm[1].padStart(2, "0");
-    const mon = monthMap[dm[2].toLowerCase()];
-    const year = dm[3];
-    if (mon) referenceDateIso = `${year}-${mon}-${day}`;
-  }
-
-  // 2) Elegir inicio del bloque útil:
-  //    - JetSMART: “detalle reserva”
-  //    - Aerolíneas: “código de reserva” / “número de vuelo” / “información de tu reserva”
+  // ✅ JetSMART + Aerolíneas markers
   const markers = [
     "detalle reserva",
     "itinerario de su reserva",
@@ -82,8 +50,6 @@ const buildAiInput = (raw: string): string => {
     "codigo de reserva",
     "número de vuelo",
     "numero de vuelo",
-    "información de tu reserva",
-    "informacion de tu reserva",
   ];
 
   const idxs = markers
@@ -93,53 +59,36 @@ const buildAiInput = (raw: string): string => {
 
   const startIdx = idxs.length ? idxs[0] : 0;
 
-  // 3) Cortes típicos para evitar “ruido” largo
   const cutMarkers = [
+    "regulaciones",
     "condiciones generales",
     "condiciones",
-    "regulaciones",
     "check-in",
     "equipaje",
     "devoluciones",
     "seguinos",
     "descargá nuestra app",
     "descarga nuestra app",
-    "aerolíneas plus",
-    "aerolineas plus",
-    "hotel",
-    "auto",
-    "asistencia al viajero",
   ];
 
   let endIdx = stripped.length;
-  for (const mk of cutMarkers) {
-    const i = lower.indexOf(mk, Math.max(0, startIdx));
+  for (const m of cutMarkers) {
+    const i = lower.indexOf(m, startIdx);
     if (i >= 0) endIdx = Math.min(endIdx, i);
   }
 
   const core = stripped.slice(startIdx, endIdx).trim();
 
-  // 4) Reglas específicas (incluye año por defecto si falta)
   const rules = [
     "REGLAS OBLIGATORIAS:",
     "- Extraer TODOS los tramos como vuelos individuales.",
     "- IDA = ORIGEN SLA. VUELTA = DESTINO SLA.",
-    "- No asumir orden (un mail puede listar primero la vuelta).",
-    "- bookingReference (código de reserva) es obligatorio si aparece.",
-    "- Si la fecha NO incluye año: usar el AÑO de la FECHA DE REFERENCIA DEL EMAIL.",
-    "- Los meses/días pueden venir en español (ej: 'lunes, 22 diciembre').",
-    "- Manejar cruces de medianoche correctamente:",
-    "  - Si arrivalHour < departureHour y no hay fecha explícita de llegada, sumar 1 día a la llegada.",
-    "- Devolver SOLO JSON válido (sin texto extra).",
-    referenceDateIso ? `FECHA DE REFERENCIA DEL EMAIL: ${referenceDateIso}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+    "- No asumir orden.",
+    "- Manejar cruces de medianoche correctamente.",
+    "- Devolver SOLO JSON válido.",
+  ].join("\n");
 
-  // Fallback acotado por si el core queda vacío o muy raro
-  const fallback = stripped.length > 8000 ? stripped.slice(0, 8000) : stripped;
-
-  return [rules, "", "CONTENIDO PRINCIPAL:", core || fallback].join("\n");
+  return [rules, "", core || stripped].join("\n");
 };
 
 /* ------------------------------------------------------------------ */
@@ -171,10 +120,18 @@ const EmailImporter: React.FC<EmailImporterProps> = ({
     try {
       const pdfBase64 = pdfFile ? await fileToBase64(pdfFile) : null;
 
-      // ✅ CONTRATO CORRECTO: devuelve UN Trip
-      const newTrip = await parseFlightEmail(apiKey, aiInput, pdfBase64);
+      // ✅ Ahora devuelve VARIOS trips (uno por grupo)
+      const newTrips = await parseFlightEmail(apiKey, aiInput, pdfBase64);
 
-      await onAddTrip(newTrip);
+      if (!Array.isArray(newTrips) || newTrips.length === 0) {
+        throw new Error("La IA no pudo generar viajes a partir del correo.");
+      }
+
+      // Importar todos (en orden)
+      for (const t of newTrips) {
+        await onAddTrip(t);
+      }
+
       onClose();
     } catch (err: any) {
       const message =
