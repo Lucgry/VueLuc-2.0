@@ -39,59 +39,17 @@ const StatCard: React.FC<{
   </div>
 );
 
-const getTripEndDate = (trip: Trip): Date | null => {
-  const dateStr =
-    trip.returnFlight?.arrivalDateTime || trip.departureFlight?.arrivalDateTime;
-  return dateStr ? new Date(dateStr) : null;
-};
-
+// ---------- Helpers ----------
 const safeDate = (iso?: string | null): Date | null => {
   if (!iso) return null;
   const d = new Date(iso);
   return isNaN(d.getTime()) ? null : d;
 };
 
-/**
- * Considera un tramo "completado" usando:
- * - arrivalDateTime si está
- * - fallback a departureDateTime si arrivalDateTime falta (caso frecuente en parseos)
- */
-const isLegCompleted = (flight: Flight | null, now: Date): boolean => {
-  if (!flight) return false;
-  const end = safeDate(flight.arrivalDateTime) ?? safeDate(flight.departureDateTime);
-  if (!end) return false;
-  return end < now;
-};
-
-/**
- * Devuelve SOLO uno de los 6 métodos permitidos.
- * Todo lo demás se ignora (null) para evitar "Debito", "Tarjeta de crédito", etc.
- */
-const formatPaymentMethod = (paymentMethod: string | null): string | null => {
-  if (!paymentMethod) return null;
-
-  const pm = String(paymentMethod);
-
-  // Detecta por últimos 4 / máscara típica
-  if (pm.includes("6007")) return "Débito Macro";
-  if (pm.includes("9417")) return "Débito Ciudad";
-  if (pm.includes("5603")) return "Crédito Macro";
-  if (pm.includes("8769")) return "Crédito Ciudad";
-  if (pm.includes("8059")) return "Crédito Yoy";
-  if (pm.includes("7005")) return "Débito Nación";
-
-  // Si ya vino normalizado exactamente como uno de los 6
-  const allowed = new Set([
-    "Débito Macro",
-    "Débito Ciudad",
-    "Crédito Macro",
-    "Crédito Ciudad",
-    "Crédito Yoy",
-    "Débito Nación",
-  ]);
-  if (allowed.has(pm)) return pm;
-
-  return null;
+const getTripEndDate = (trip: Trip): Date | null => {
+  const dateStr =
+    trip.returnFlight?.arrivalDateTime || trip.departureFlight?.arrivalDateTime;
+  return dateStr ? safeDate(dateStr) : null;
 };
 
 const formatDate = (dateString: string | null) => {
@@ -102,58 +60,116 @@ const formatDate = (dateString: string | null) => {
   });
 };
 
+// ---------- Payment methods (ONLY 6, fixed order) ----------
+const PAYMENT_ORDER = [
+  "Débito Macro",
+  "Débito Ciudad",
+  "Débito Nación",
+  "Crédito Macro",
+  "Crédito Ciudad",
+  "Crédito Yoy",
+] as const;
+
+type PaymentLabel = (typeof PAYMENT_ORDER)[number];
+
+/**
+ * Devuelve SOLO uno de los 6 métodos permitidos.
+ * Todo lo demás se ignora (null) para evitar "Debito", "Tarjeta de crédito", etc.
+ */
+const formatPaymentMethod = (paymentMethod: string | null): PaymentLabel | null => {
+  if (!paymentMethod) return null;
+
+  const pm = String(paymentMethod);
+
+  // Detecta por últimos 4 / máscara típica
+  if (pm.includes("6007")) return "Débito Macro";
+  if (pm.includes("9417")) return "Débito Ciudad";
+  if (pm.includes("7005")) return "Débito Nación";
+  if (pm.includes("5603")) return "Crédito Macro";
+  if (pm.includes("8769")) return "Crédito Ciudad";
+  if (pm.includes("8059")) return "Crédito Yoy";
+
+  // Si ya vino normalizado exactamente como uno de los 6
+  if ((PAYMENT_ORDER as readonly string[]).includes(pm)) return pm as PaymentLabel;
+
+  return null;
+};
+
+// Año del vuelo: preferimos arrivalDateTime; fallback departureDateTime
+const getFlightYear = (flight: Flight | null): number | null => {
+  if (!flight) return null;
+  const d =
+    safeDate(flight.arrivalDateTime) ||
+    safeDate(flight.departureDateTime);
+  return d ? d.getFullYear() : null;
+};
+
+// Marca completado por fecha fin: preferimos arrivalDateTime; fallback departureDateTime
+const isFlightCompleted = (flight: Flight | null, now: Date): boolean => {
+  if (!flight) return false;
+  const end =
+    safeDate(flight.arrivalDateTime) ||
+    safeDate(flight.departureDateTime);
+  return !!end && end < now;
+};
+
 const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
 
+  // Años disponibles: por AÑO DE VUELO (no por purchaseDate)
   const availableYears = useMemo(() => {
-    const yearsSet = trips.reduce((acc, trip) => {
-      const costDateStr = trip.purchaseDate || trip.createdAt;
-      if (costDateStr) {
-        const year = new Date(costDateStr).getFullYear();
-        if (!Number.isNaN(year)) {
-          acc.add(year);
-        }
-      }
-      return acc;
-    }, new Set<number>());
+    const years = new Set<number>();
 
-    const uniqueYears = Array.from(yearsSet).sort(
-      (a: number, b: number) => b - a
-    );
-
-    if (
-      uniqueYears.length === 0 ||
-      !uniqueYears.includes(new Date().getFullYear())
-    ) {
-      uniqueYears.unshift(new Date().getFullYear());
+    for (const trip of trips) {
+      const y1 = getFlightYear(trip.departureFlight);
+      const y2 = getFlightYear(trip.returnFlight);
+      if (y1 != null) years.add(y1);
+      if (y2 != null) years.add(y2);
     }
+
+    const uniqueYears = Array.from(years).sort((a, b) => b - a);
+
+    // fallback: si no hay nada, mostrar año actual
+    const currentYear = new Date().getFullYear();
+    if (uniqueYears.length === 0 || !uniqueYears.includes(currentYear)) {
+      uniqueYears.unshift(currentYear);
+    }
+
     return uniqueYears;
   }, [trips]);
 
+  // Trips relevantes para el año: si tienen al menos un tramo cuyo AÑO DE VUELO coincide
   const tripsForSelectedYear = useMemo(() => {
     return trips.filter((trip) => {
-      const costDateStr = trip.purchaseDate || trip.createdAt;
-      return costDateStr
-        ? new Date(costDateStr).getFullYear() === selectedYear
-        : false;
+      const y1 = getFlightYear(trip.departureFlight);
+      const y2 = getFlightYear(trip.returnFlight);
+      return y1 === selectedYear || y2 === selectedYear;
     });
   }, [trips, selectedYear]);
 
-  // ✅ Tramos completados (ida + vuelta), con fallback a departureDateTime si falta arrivalDateTime
+  // Tramos completados por AÑO DE VUELO (ida + vuelta)
   const completedLegsForYear = useMemo(() => {
     const now = new Date();
     let count = 0;
 
     for (const trip of tripsForSelectedYear) {
-      if (isLegCompleted(trip.departureFlight, now)) count += 1;
-      if (isLegCompleted(trip.returnFlight, now)) count += 1;
+      // ida
+      if (getFlightYear(trip.departureFlight) === selectedYear) {
+        if (isFlightCompleted(trip.departureFlight, now)) count += 1;
+      }
+      // vuelta
+      if (getFlightYear(trip.returnFlight) === selectedYear) {
+        if (isFlightCompleted(trip.returnFlight, now)) count += 1;
+      }
     }
 
     return count;
-  }, [tripsForSelectedYear]);
+  }, [tripsForSelectedYear, selectedYear]);
 
   const totalCostForYear = useMemo(() => {
+    // mantenemos tu criterio: suma costos de los vuelos del trip (no “prorratea” por año)
+    // Si querés que el costo también sea por año de vuelo, lo ajustamos después.
     return tripsForSelectedYear.reduce((sum, trip) => {
       const idaCost = trip.departureFlight?.cost || 0;
       const vueltaCost = trip.returnFlight?.cost || 0;
@@ -162,36 +178,31 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
   }, [tripsForSelectedYear]);
 
   const paymentMethodSummary = useMemo(() => {
-    const costsByMethod: { [key: string]: number } = {};
+    const costsByMethod: Record<PaymentLabel, number> = {
+      "Débito Macro": 0,
+      "Débito Ciudad": 0,
+      "Débito Nación": 0,
+      "Crédito Macro": 0,
+      "Crédito Ciudad": 0,
+      "Crédito Yoy": 0,
+    };
 
-    tripsForSelectedYear.forEach((trip) => {
-      [trip.departureFlight, trip.returnFlight].forEach((flight) => {
-        if (flight && flight.cost && flight.paymentMethod) {
-          const formattedMethod = formatPaymentMethod(flight.paymentMethod);
-          if (!formattedMethod) return;
+    for (const trip of tripsForSelectedYear) {
+      for (const flight of [trip.departureFlight, trip.returnFlight]) {
+        if (!flight) continue;
+        if (!flight.cost || flight.cost <= 0) continue;
 
-          costsByMethod[formattedMethod] =
-            (costsByMethod[formattedMethod] || 0) + flight.cost;
-        }
-      });
-    });
+        const label = formatPaymentMethod(flight.paymentMethod || null);
+        if (!label) continue;
 
-    // ✅ Solo los 6 métodos, en orden fijo (para que no se “desordene”)
-    const ORDER = [
-      "Crédito Yoy",
-      "Crédito Ciudad",
-      "Crédito Macro",
-      "Débito Ciudad",
-      "Débito Macro",
-      "Débito Nación",
-    ] as const;
+        costsByMethod[label] += flight.cost;
+      }
+    }
 
-    return ORDER.filter((method) => (costsByMethod[method] || 0) > 0).map(
-      (method) => ({
-        method,
-        total: costsByMethod[method] || 0,
-      })
-    );
+    // Orden FIJO (y omitimos los que queden en 0)
+    return PAYMENT_ORDER
+      .map((method) => ({ method, total: costsByMethod[method] }))
+      .filter((x) => x.total > 0);
   }, [tripsForSelectedYear]);
 
   const monthlyBreakdown = useMemo(() => {
