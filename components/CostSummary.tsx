@@ -76,7 +76,9 @@ type PaymentLabel = (typeof PAYMENT_ORDER)[number];
  * Devuelve SOLO uno de los 6 métodos permitidos.
  * Todo lo demás se ignora (null) para evitar "Debito", "Tarjeta de crédito", etc.
  */
-const formatPaymentMethod = (paymentMethod: string | null): PaymentLabel | null => {
+const formatPaymentMethod = (
+  paymentMethod: string | null
+): PaymentLabel | null => {
   if (!paymentMethod) return null;
 
   const pm = String(paymentMethod);
@@ -90,7 +92,8 @@ const formatPaymentMethod = (paymentMethod: string | null): PaymentLabel | null 
   if (pm.includes("8059")) return "Crédito Yoy";
 
   // Si ya vino normalizado exactamente como uno de los 6
-  if ((PAYMENT_ORDER as readonly string[]).includes(pm)) return pm as PaymentLabel;
+  if ((PAYMENT_ORDER as readonly string[]).includes(pm))
+    return pm as PaymentLabel;
 
   return null;
 };
@@ -98,18 +101,14 @@ const formatPaymentMethod = (paymentMethod: string | null): PaymentLabel | null 
 // Año del vuelo: preferimos arrivalDateTime; fallback departureDateTime
 const getFlightYear = (flight: Flight | null): number | null => {
   if (!flight) return null;
-  const d =
-    safeDate(flight.arrivalDateTime) ||
-    safeDate(flight.departureDateTime);
+  const d = safeDate(flight.arrivalDateTime) || safeDate(flight.departureDateTime);
   return d ? d.getFullYear() : null;
 };
 
 // Marca completado por fecha fin: preferimos arrivalDateTime; fallback departureDateTime
 const isFlightCompleted = (flight: Flight | null, now: Date): boolean => {
   if (!flight) return false;
-  const end =
-    safeDate(flight.arrivalDateTime) ||
-    safeDate(flight.departureDateTime);
+  const end = safeDate(flight.arrivalDateTime) || safeDate(flight.departureDateTime);
   return !!end && end < now;
 };
 
@@ -470,9 +469,11 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                                 {item.type}
                               </span>
                             </div>
+
+                            {/* FECHA ESTRICTA: siempre fecha de compra */}
                             <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
                               <span className="hidden sm:inline">• </span>
-                              {formatDate(item.flight.departureDateTime)}
+                              {formatDate(item.purchaseDate)}
                             </div>
                           </div>
 
