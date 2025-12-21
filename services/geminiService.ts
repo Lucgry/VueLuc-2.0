@@ -7,7 +7,26 @@ type GeminiResponse = {
   purchaseDate?: string | null;
 };
 
-// Helper: obtiene una fecha comparable (ms) para un grupo
+// -----------------------------
+// Helpers de fecha (robustos)
+// -----------------------------
+const isValidDate = (value: any): boolean => {
+  const d = new Date(value);
+  return Number.isFinite(d.getTime());
+};
+
+const toMsOrInfinity = (value: any): number => {
+  const d = new Date(value);
+  const ms = d.getTime();
+  return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
+};
+
+/**
+ * Elige el "inicio" de un grupo:
+ * - outbound.departureDateTime
+ * - inbound.departureDateTime
+ * - Infinity si ninguna fecha es válida
+ */
 const getGroupStartMs = (group: any): number => {
   const dt =
     group?.outbound?.departureDateTime ||
@@ -15,9 +34,30 @@ const getGroupStartMs = (group: any): number => {
     null;
 
   if (!dt) return Number.POSITIVE_INFINITY;
+  return toMsOrInfinity(dt);
+};
 
-  const ms = new Date(dt).getTime();
-  return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
+/**
+ * Normaliza flights para evitar que una fecha inválida rompa todo el pipeline.
+ * - Si departureDateTime inválido, NO lo repara (eso debe venir bien del modelo),
+ *   pero permite descartar vuelos inservibles en el agrupado.
+ * - Mantiene el resto del objeto intacto.
+ */
+const normalizeFlights = (flights: Flight[]): { valid: Flight[]; invalid: Flight[] } => {
+  const valid: Flight[] = [];
+  const invalid: Flight[] = [];
+
+  for (const f of flights) {
+    const depOk = !!f?.departureDateTime && isValidDate(f.departureDateTime);
+    const oriOk = !!(f as any)?.origin;
+    const dstOk = !!(f as any)?.destination;
+
+    // Criterio mínimo: origen/destino + departureDateTime válido
+    if (depOk && oriOk && dstOk) valid.push(f);
+    else invalid.push(f);
+  }
+
+  return { valid, invalid };
 };
 
 export const parseFlightEmail = async (
@@ -56,18 +96,46 @@ export const parseFlightEmail = async (
       throw new Error("La IA no pudo encontrar vuelos en el correo.");
     }
 
-    // Fecha de compra (fallback robusto)
-    const purchaseDate =
-      (aiResponse.purchaseDate && String(aiResponse.purchaseDate)) ||
-      aiResponse.flights[0]?.departureDateTime ||
-      new Date().toISOString();
+    // 1) Normalizar: separar vuelos válidos vs inválidos
+    const { valid: validFlights, invalid: invalidFlights } = normalizeFlights(
+      aiResponse.flights
+    );
+
+    // Si la IA devolvió cosas pero ninguna es utilizable, devolvemos un error con pista clara
+    if (validFlights.length === 0) {
+      const sample = invalidFlights?.[0] as any;
+      const hint =
+        sample?.departureDateTime && !isValidDate(sample.departureDateTime)
+          ? `Fecha inválida devuelta por IA (departureDateTime="${sample.departureDateTime}"). Probable falta de año.`
+          : "La IA devolvió vuelos sin datos mínimos (origen/destino/fecha).";
+      throw new Error(hint);
+    }
+
+    // 2) Fecha de compra (fallback robusto)
+    //    - Si purchaseDate viene y es válida, usarla
+    //    - Sino usar la menor departureDateTime válida
+    //    - Sino ahora (último recurso)
+    let purchaseDate: string;
+    if (aiResponse.purchaseDate && isValidDate(aiResponse.purchaseDate)) {
+      purchaseDate = String(aiResponse.purchaseDate);
+    } else {
+      const sortedByDep = [...validFlights].sort(
+        (a: any, b: any) => toMsOrInfinity(a.departureDateTime) - toMsOrInfinity(b.departureDateTime)
+      );
+      purchaseDate =
+        sortedByDep[0]?.departureDateTime && isValidDate(sortedByDep[0].departureDateTime)
+          ? String(sortedByDep[0].departureDateTime)
+          : new Date().toISOString();
+    }
 
     /**
      * Agrupación:
      * - NO se decide acá si deben unirse viajes existentes
      * - Solo se agrupan vuelos INTERNOS al mail
+     *
+     * Importante: agrupamos SOLO vuelos válidos para no contaminar el grouping.
      */
-    const groups = groupFlightsIntoTrips(aiResponse.flights);
+    const groups = groupFlightsIntoTrips(validFlights);
 
     if (!groups || groups.length === 0) {
       throw new Error("No se pudo agrupar ningún vuelo del correo.");
@@ -75,13 +143,12 @@ export const parseFlightEmail = async (
 
     /**
      * ✅ ELECCIÓN CORRECTA DEL GRUPO PRINCIPAL
-     * - Se elige el grupo con FECHA MÁS PRÓXIMA
-     * - NO por bookingReference
-     * - NO por SLA
+     * - Se elige el grupo con FECHA MÁS PRÓXIMA (válida)
+     * - Evita que Infinity gane por accidente
      */
-    const primary = [...groups].sort(
-      (a, b) => getGroupStartMs(a) - getGroupStartMs(b)
-    )[0];
+    const primary = [...groups]
+      .filter((g) => Number.isFinite(getGroupStartMs(g)))
+      .sort((a, b) => getGroupStartMs(a) - getGroupStartMs(b))[0] || groups[0];
 
     if (!primary || (!primary.outbound && !primary.inbound)) {
       throw new Error("No se pudo determinar un grupo de vuelo válido.");
