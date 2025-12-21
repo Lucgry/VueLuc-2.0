@@ -46,18 +46,32 @@ const safeDate = (iso?: string | null): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
-const getTripEndDate = (trip: Trip): Date | null => {
-  const dateStr =
-    trip.returnFlight?.arrivalDateTime || trip.departureFlight?.arrivalDateTime;
-  return dateStr ? safeDate(dateStr) : null;
-};
-
 const formatDate = (dateString: string | null) => {
   if (!dateString) return "";
   return new Date(dateString).toLocaleDateString("es-AR", {
     day: "numeric",
     month: "short",
   });
+};
+
+// Año del vuelo: preferimos arrivalDateTime; fallback departureDateTime
+const getFlightYear = (flight: Flight | null): number | null => {
+  if (!flight) return null;
+  const d = safeDate(flight.arrivalDateTime) || safeDate(flight.departureDateTime);
+  return d ? d.getFullYear() : null;
+};
+
+// Marca completado por fecha fin: preferimos arrivalDateTime; fallback departureDateTime
+const isFlightCompleted = (flight: Flight | null, now: Date): boolean => {
+  if (!flight) return false;
+  const end = safeDate(flight.arrivalDateTime) || safeDate(flight.departureDateTime);
+  return !!end && end < now;
+};
+
+// Compra (estricto): SOLO purchaseDate (no createdAt)
+const getPurchaseYearStrict = (trip: Trip): number | null => {
+  const d = safeDate(trip.purchaseDate || null);
+  return d ? d.getFullYear() : null;
 };
 
 // ---------- Payment methods (ONLY 6, fixed order) ----------
@@ -76,9 +90,7 @@ type PaymentLabel = (typeof PAYMENT_ORDER)[number];
  * Devuelve SOLO uno de los 6 métodos permitidos.
  * Todo lo demás se ignora (null) para evitar "Debito", "Tarjeta de crédito", etc.
  */
-const formatPaymentMethod = (
-  paymentMethod: string | null
-): PaymentLabel | null => {
+const formatPaymentMethod = (paymentMethod: string | null): PaymentLabel | null => {
   if (!paymentMethod) return null;
 
   const pm = String(paymentMethod);
@@ -92,39 +104,22 @@ const formatPaymentMethod = (
   if (pm.includes("8059")) return "Crédito Yoy";
 
   // Si ya vino normalizado exactamente como uno de los 6
-  if ((PAYMENT_ORDER as readonly string[]).includes(pm))
-    return pm as PaymentLabel;
+  if ((PAYMENT_ORDER as readonly string[]).includes(pm)) return pm as PaymentLabel;
 
   return null;
-};
-
-// Año del vuelo: preferimos arrivalDateTime; fallback departureDateTime
-const getFlightYear = (flight: Flight | null): number | null => {
-  if (!flight) return null;
-  const d = safeDate(flight.arrivalDateTime) || safeDate(flight.departureDateTime);
-  return d ? d.getFullYear() : null;
-};
-
-// Marca completado por fecha fin: preferimos arrivalDateTime; fallback departureDateTime
-const isFlightCompleted = (flight: Flight | null, now: Date): boolean => {
-  if (!flight) return false;
-  const end = safeDate(flight.arrivalDateTime) || safeDate(flight.departureDateTime);
-  return !!end && end < now;
 };
 
 const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
 
-  // Años disponibles: por AÑO DE VUELO (no por purchaseDate)
+  // Años disponibles (GASTOS): por purchaseDate (estricto)
   const availableYears = useMemo(() => {
     const years = new Set<number>();
 
     for (const trip of trips) {
-      const y1 = getFlightYear(trip.departureFlight);
-      const y2 = getFlightYear(trip.returnFlight);
-      if (y1 != null) years.add(y1);
-      if (y2 != null) years.add(y2);
+      const y = getPurchaseYearStrict(trip);
+      if (y != null) years.add(y);
     }
 
     const uniqueYears = Array.from(years).sort((a, b) => b - a);
@@ -138,21 +133,17 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     return uniqueYears;
   }, [trips]);
 
-  // Trips relevantes para el año: si tienen al menos un tramo cuyo AÑO DE VUELO coincide
-  const tripsForSelectedYear = useMemo(() => {
-    return trips.filter((trip) => {
-      const y1 = getFlightYear(trip.departureFlight);
-      const y2 = getFlightYear(trip.returnFlight);
-      return y1 === selectedYear || y2 === selectedYear;
-    });
+  // Trips para GASTOS del año seleccionado: purchaseDate (estricto)
+  const tripsForPurchaseYear = useMemo(() => {
+    return trips.filter((trip) => getPurchaseYearStrict(trip) === selectedYear);
   }, [trips, selectedYear]);
 
-  // Tramos completados por AÑO DE VUELO (ida + vuelta)
+  // Tramos completados por AÑO DE VUELO (independiente de gastos)
   const completedLegsForYear = useMemo(() => {
     const now = new Date();
     let count = 0;
 
-    for (const trip of tripsForSelectedYear) {
+    for (const trip of trips) {
       // ida
       if (getFlightYear(trip.departureFlight) === selectedYear) {
         if (isFlightCompleted(trip.departureFlight, now)) count += 1;
@@ -164,18 +155,18 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
     }
 
     return count;
-  }, [tripsForSelectedYear, selectedYear]);
+  }, [trips, selectedYear]);
 
+  // Gasto total del año (estricto por purchaseDate)
   const totalCostForYear = useMemo(() => {
-    // mantenemos tu criterio: suma costos de los vuelos del trip (no “prorratea” por año)
-    // Si querés que el costo también sea por año de vuelo, lo ajustamos después.
-    return tripsForSelectedYear.reduce((sum, trip) => {
+    return tripsForPurchaseYear.reduce((sum, trip) => {
       const idaCost = trip.departureFlight?.cost || 0;
       const vueltaCost = trip.returnFlight?.cost || 0;
       return sum + idaCost + vueltaCost;
     }, 0);
-  }, [tripsForSelectedYear]);
+  }, [tripsForPurchaseYear]);
 
+  // Métodos de pago (estricto por purchaseDate)
   const paymentMethodSummary = useMemo(() => {
     const costsByMethod: Record<PaymentLabel, number> = {
       "Débito Macro": 0,
@@ -186,7 +177,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
       "Crédito Yoy": 0,
     };
 
-    for (const trip of tripsForSelectedYear) {
+    for (const trip of tripsForPurchaseYear) {
       for (const flight of [trip.departureFlight, trip.returnFlight]) {
         if (!flight) continue;
         if (!flight.cost || flight.cost <= 0) continue;
@@ -198,30 +189,30 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
       }
     }
 
-    // Orden FIJO (y omitimos los que queden en 0)
     return PAYMENT_ORDER
       .map((method) => ({ method, total: costsByMethod[method] }))
       .filter((x) => x.total > 0);
-  }, [tripsForSelectedYear]);
+  }, [tripsForPurchaseYear]);
 
+  // Desglose mensual (estricto por purchaseDate)
   const monthlyBreakdown = useMemo(() => {
     type MonthlyItem = {
       flight: Flight;
       type: "ida" | "vuelta";
-      purchaseDate: string;
+      purchaseDate: string; // SIEMPRE purchaseDate real
     };
 
     const dataByMonth: {
       [monthIndex: number]: { cost: number; items: MonthlyItem[] };
     } = {};
 
-    for (const trip of tripsForSelectedYear) {
-      const costDateStr = trip.purchaseDate || trip.createdAt;
+    for (const trip of tripsForPurchaseYear) {
+      // Estricto: si no hay purchaseDate, no se contabiliza (evita mostrar fecha falsa)
+      const costDateStr = trip.purchaseDate;
       if (!costDateStr) continue;
 
       const purchaseDate = new Date(costDateStr);
       const monthIndex = purchaseDate.getMonth();
-
       if (isNaN(monthIndex)) continue;
 
       if (!dataByMonth[monthIndex]) {
@@ -269,11 +260,10 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
       items:
         dataByMonth[index]?.items.sort(
           (a, b) =>
-            new Date(a.purchaseDate).getTime() -
-            new Date(b.purchaseDate).getTime()
+            new Date(a.purchaseDate).getTime() - new Date(b.purchaseDate).getTime()
         ) || [],
     }));
-  }, [tripsForSelectedYear]);
+  }, [tripsForPurchaseYear]);
 
   const maxMonthlyCost = Math.max(...monthlyBreakdown.map((m) => m.cost), 1);
 
@@ -315,7 +305,6 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
           </select>
         </div>
 
-        {/* Grid layout with small gap to maximize horizontal space */}
         <div className="grid grid-cols-2 gap-2 sm:gap-3">
           <StatCard
             icon={<BriefcaseIcon className="h-5 w-5 sm:h-6 sm:w-6" />}
@@ -391,12 +380,10 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                   }`}
                   onClick={() => hasData && handleToggleMonth(index)}
                 >
-                  {/* Nombre del Mes */}
                   <span className="font-semibold text-sm text-slate-600 dark:text-slate-400 w-8 text-right flex-shrink-0">
                     {name}
                   </span>
 
-                  {/* Barra de Progreso */}
                   <div className="flex-1 bg-slate-200 dark:bg-slate-700/50 rounded-full h-2.5 sm:h-3 shadow-inner relative overflow-hidden mx-1">
                     <div
                       className="bg-gradient-to-r from-indigo-500 to-teal-500 h-2.5 sm:h-3 rounded-full transition-all duration-500 ease-out"
@@ -404,7 +391,6 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                     />
                   </div>
 
-                  {/* Monto */}
                   <div className="min-w-[85px] sm:w-28 text-right flex-shrink-0">
                     <span className="font-bold text-sm sm:text-base text-slate-700 dark:text-slate-200 block truncate">
                       $
@@ -415,7 +401,6 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                     </span>
                   </div>
 
-                  {/* Icono Expandir */}
                   {hasData ? (
                     <ChevronDownIcon
                       className={`w-4 h-4 text-slate-500 flex-shrink-0 transition-transform duration-300 ${
@@ -427,12 +412,9 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                   )}
                 </div>
 
-                {/* Detalle Expandido - Optimizado para móvil */}
                 <div
                   className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                    isExpanded
-                      ? "max-h-[2000px] opacity-100 mt-1"
-                      : "max-h-0 opacity-0"
+                    isExpanded ? "max-h-[2000px] opacity-100 mt-1" : "max-h-0 opacity-0"
                   }`}
                 >
                   <div className="space-y-2 pl-2 sm:pl-10">
@@ -441,7 +423,6 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                         key={i}
                         className="bg-white dark:bg-slate-900 p-3 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm relative overflow-hidden"
                       >
-                        {/* Decoración lateral para indicar tipo */}
                         <div
                           className={`absolute left-0 top-0 bottom-0 w-1 ${
                             item.type === "ida" ? "bg-blue-500" : "bg-green-500"
@@ -451,11 +432,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                         <div className="flex items-start justify-between w-full pl-2">
                           <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <AirlineLogo
-                                airline={item.flight.airline}
-                                size="xs"
-                                type="isotipo"
-                              />
+                              <AirlineLogo airline={item.flight.airline} size="xs" type="isotipo" />
                               <span className="font-bold dark:text-white truncate">
                                 {item.flight.flightNumber}
                               </span>
@@ -470,7 +447,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                               </span>
                             </div>
 
-                            {/* FECHA ESTRICTA: siempre fecha de compra */}
+                            {/* ESTRICTO: fecha de compra (purchaseDate) */}
                             <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
                               <span className="hidden sm:inline">• </span>
                               {formatDate(item.purchaseDate)}
@@ -491,6 +468,7 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
                     ))}
                   </div>
                 </div>
+
               </div>
             );
           })}
