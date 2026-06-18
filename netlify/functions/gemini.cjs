@@ -508,8 +508,11 @@ async function callGemini(params) {
     contents: [{ role: "user", parts: parts }],
     generationConfig: {
       temperature: 0,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 8192,
       responseMimeType: "application/json",
+      thinkingConfig: {
+        thinkingBudget: 0,
+      },
     },
   };
 
