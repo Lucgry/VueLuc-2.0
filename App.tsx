@@ -128,6 +128,65 @@ const isRoundTrip = (trip: Trip): boolean => {
   return !!idaFlight && !!vueltaFlight;
 };
 
+const normalizeFlightIdentityField = (value?: string | null): string =>
+  (value || "").trim().toUpperCase();
+
+const normalizeFlightDateTime = (value?: string | null): string =>
+  (value || "").trim();
+
+const getTripFlights = (trip: {
+  departureFlight?: Flight | null;
+  returnFlight?: Flight | null;
+}): Flight[] =>
+  [trip.departureFlight ?? null, trip.returnFlight ?? null].filter(Boolean) as Flight[];
+
+const flightMatchesIdentity = (candidate: Flight, existing: Flight): boolean => {
+  const candidateBooking = normalizeFlightIdentityField(candidate.bookingReference);
+  const existingBooking = normalizeFlightIdentityField(existing.bookingReference);
+
+  // Si ambos tienen reserva, debe coincidir. Si falta en alguno, no la usamos
+  // como bloqueo porque imports antiguos/manuales pueden no tenerla.
+  if (candidateBooking && existingBooking && candidateBooking !== existingBooking) {
+    return false;
+  }
+
+  const candidateFlightNumber = normalizeFlightIdentityField(candidate.flightNumber);
+  const existingFlightNumber = normalizeFlightIdentityField(existing.flightNumber);
+  const candidateDeparture = normalizeFlightDateTime(candidate.departureDateTime);
+  const existingDeparture = normalizeFlightDateTime(existing.departureDateTime);
+  const candidateOrigin = normalizeFlightIdentityField(candidate.departureAirportCode);
+  const existingOrigin = normalizeFlightIdentityField(existing.departureAirportCode);
+  const candidateDestination = normalizeFlightIdentityField(candidate.arrivalAirportCode);
+  const existingDestination = normalizeFlightIdentityField(existing.arrivalAirportCode);
+
+  if (
+    !candidateFlightNumber ||
+    !candidateDeparture ||
+    !candidateOrigin ||
+    !candidateDestination ||
+    !existingFlightNumber ||
+    !existingDeparture ||
+    !existingOrigin ||
+    !existingDestination
+  ) {
+    return false;
+  }
+
+  return (
+    candidateFlightNumber === existingFlightNumber &&
+    candidateDeparture === existingDeparture &&
+    candidateOrigin === existingOrigin &&
+    candidateDestination === existingDestination
+  );
+};
+
+const flightAlreadyExists = (candidate: Flight, existingTrips: Trip[]): boolean =>
+  existingTrips.some((trip) =>
+    getTripFlights(trip).some((existingFlight) =>
+      flightMatchesIdentity(candidate, existingFlight)
+    )
+  );
+
 /* ------------------------------------------------------------------ */
 /* Auth Error Screen                                                    */
 /* ------------------------------------------------------------------ */
@@ -397,12 +456,35 @@ const App: React.FC = () => {
     processingRef.current = true;
 
     try {
+      const duplicateDeparture =
+        !!tripData.departureFlight &&
+        flightAlreadyExists(tripData.departureFlight, trips);
+      const duplicateReturn =
+        !!tripData.returnFlight && flightAlreadyExists(tripData.returnFlight, trips);
+
+      const tripToSave: Omit<Trip, "id" | "createdAt"> = {
+        ...tripData,
+        departureFlight: duplicateDeparture ? null : tripData.departureFlight ?? null,
+        returnFlight: duplicateReturn ? null : tripData.returnFlight ?? null,
+      };
+
+      if (!tripToSave.departureFlight && !tripToSave.returnFlight) {
+        window.alert("Este viaje ya existe en Vueluc. No se guardó un duplicado.");
+        return;
+      }
+
+      if (duplicateDeparture || duplicateReturn) {
+        window.alert(
+          "Uno de los tramos ya existía en Vueluc. Se guardará solamente el tramo faltante."
+        );
+      }
+
       const draftFake: Trip = {
         id: "__draft__",
         createdAt: nowIso,
-        purchaseDate: tripData.purchaseDate || nowIso,
-        departureFlight: tripData.departureFlight ?? null,
-        returnFlight: tripData.returnFlight ?? null,
+        purchaseDate: tripToSave.purchaseDate || nowIso,
+        departureFlight: tripToSave.departureFlight ?? null,
+        returnFlight: tripToSave.returnFlight ?? null,
       };
 
       const draftLeg = getOneWayLeg(draftFake);
@@ -450,9 +532,9 @@ const App: React.FC = () => {
 
       // 2) si no hubo merge, guardamos normal
       await addDoc(collection(db, "users", user.uid, "trips"), {
-        ...tripData,
+        ...tripToSave,
         createdAt: nowIso,
-        purchaseDate: tripData.purchaseDate || nowIso,
+        purchaseDate: tripToSave.purchaseDate || nowIso,
       });
 
       setIsModalOpen(false);
