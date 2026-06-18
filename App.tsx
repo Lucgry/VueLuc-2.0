@@ -131,8 +131,16 @@ const isRoundTrip = (trip: Trip): boolean => {
 const normalizeFlightIdentityField = (value?: string | null): string =>
   (value || "").trim().toUpperCase();
 
+const normalizeFlightNumber = (value?: string | null): string =>
+  normalizeFlightIdentityField(value).replace(/\s+/g, "");
+
 const normalizeFlightDateTime = (value?: string | null): string =>
-  (value || "").trim();
+  (value || "")
+    .trim()
+    .replace(
+      /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2}))?.*$/,
+      (_match, date, time, seconds) => `${date}T${time}:${seconds || "00"}`
+    );
 
 const getTripFlights = (trip: {
   departureFlight?: Flight | null;
@@ -150,8 +158,8 @@ const flightMatchesIdentity = (candidate: Flight, existing: Flight): boolean => 
     return false;
   }
 
-  const candidateFlightNumber = normalizeFlightIdentityField(candidate.flightNumber);
-  const existingFlightNumber = normalizeFlightIdentityField(existing.flightNumber);
+  const candidateFlightNumber = normalizeFlightNumber(candidate.flightNumber);
+  const existingFlightNumber = normalizeFlightNumber(existing.flightNumber);
   const candidateDeparture = normalizeFlightDateTime(candidate.departureDateTime);
   const existingDeparture = normalizeFlightDateTime(existing.departureDateTime);
   const candidateOrigin = normalizeFlightIdentityField(candidate.departureAirportCode);
