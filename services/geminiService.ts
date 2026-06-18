@@ -109,10 +109,21 @@ export const parseFlightEmail = async (
     if (!res.ok) {
       const details = data?.details ? `\n\nDetalles Google:\n${data.details}` : "";
       const modelUsed = data?.modelUsed ? `\nModelo: ${data.modelUsed}` : "";
+      const parseError = data?.parseError ? `\nParseError: ${data.parseError}` : "";
+      const finishReason = data?.finishReason ? `\nFinishReason: ${data.finishReason}` : "";
+      const candidateTextLength =
+        typeof data?.candidateTextLength === "number"
+          ? `\nCandidateTextLength: ${data.candidateTextLength}`
+          : "";
+      const detailsTail = data?.detailsTail ? `\n\nDetalles Tail:\n${data.detailsTail}` : "";
       const msg =
         `${data?.error || `Error llamando a Gemini (status ${res.status})`}` +
         modelUsed +
-        details;
+        parseError +
+        finishReason +
+        candidateTextLength +
+        details +
+        detailsTail;
       throw new Error(msg);
     }
 
