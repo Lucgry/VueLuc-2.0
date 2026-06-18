@@ -253,6 +253,122 @@ function parseAerolineasArgentinasEmail(emailText) {
   };
 }
 
+function normalizeMoneyValue(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return null;
+
+  var cleaned = value
+    .replace(/[^\d,.-]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  var n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function extractAerolineasPdfPaymentData(value) {
+  if (!value || typeof value !== "object") return { cost: null, paymentMethod: null };
+
+  var cost =
+    normalizeMoneyValue(value.cost) ||
+    normalizeMoneyValue(value.totalCost) ||
+    normalizeMoneyValue(value.total) ||
+    normalizeMoneyValue(value.amount);
+
+  var paymentMethod =
+    typeof value.paymentMethod === "string" && value.paymentMethod.trim()
+      ? value.paymentMethod.trim()
+      : typeof value.payment_method === "string" && value.payment_method.trim()
+      ? value.payment_method.trim()
+      : typeof value.formaDePago === "string" && value.formaDePago.trim()
+      ? value.formaDePago.trim()
+      : null;
+
+  if ((!cost || !paymentMethod) && Array.isArray(value.flights) && value.flights[0]) {
+    var firstFlight = value.flights[0];
+    if (!cost) cost = normalizeMoneyValue(firstFlight.cost);
+    if (
+      !paymentMethod &&
+      typeof firstFlight.paymentMethod === "string" &&
+      firstFlight.paymentMethod.trim()
+    ) {
+      paymentMethod = firstFlight.paymentMethod.trim();
+    }
+  }
+
+  return {
+    cost: cost || null,
+    paymentMethod: paymentMethod || null,
+  };
+}
+
+function buildAerolineasPdfPaymentInstruction() {
+  return (
+    "Eres un asistente de extraccion de datos de facturacion de vuelos.\n" +
+    "Usa principalmente el PDF adjunto.\n" +
+    "Devuelve UNICAMENTE JSON valido. NO markdown. NO explicacion.\n\n" +
+    "ESQUEMA:\n" +
+    "{\n" +
+    '  "cost": number | null,\n' +
+    '  "paymentMethod": "string" | null\n' +
+    "}\n\n" +
+    "REGLAS:\n" +
+    "- Extrae el costo total pagado si aparece.\n" +
+    "- Extrae la forma de pago con el mayor detalle disponible.\n" +
+    "- Si el PDF menciona tarjeta, marca, banco, billetera, ultimos digitos o medio de pago, conserva ese texto resumido.\n" +
+    "- Ejemplos validos: \"Visa ****1234\", \"Mastercard\", \"Debito Nacion\", \"Mercado Pago\".\n" +
+    "- No devuelvas solamente \"tarjeta\" si hay mas detalle disponible.\n" +
+    "- Si no encuentras un dato, devuelvelo como null.\n"
+  );
+}
+
+async function enrichAerolineasWithPdfPayment(params) {
+  var parsed = params.parsed;
+  var apiKey = params.apiKey;
+  var model = params.model;
+  var emailText = params.emailText;
+  var pdfData = params.pdfData;
+
+  if (!parsed || !pdfData || !apiKey) return parsed;
+
+  try {
+    var r = await callGemini({
+      apiKey: apiKey,
+      model: model,
+      systemInstruction: buildAerolineasPdfPaymentInstruction(),
+      emailText:
+        "Email de Aerolineas Argentinas ya parseado deterministicamente.\n" +
+        "Solo intenta extraer costo total y forma de pago desde el PDF.\n\n" +
+        emailText,
+      pdfData: pdfData,
+    });
+
+    if (!r.resp.ok) return parsed;
+
+    var wrapper = safeJsonParse(r.rawText);
+    if (!wrapper.ok) return parsed;
+
+    var candidateText = extractCandidateText(wrapper.value);
+    var output = parseModelOutputToJson(candidateText);
+    if (!output.ok) return parsed;
+
+    var paymentData = extractAerolineasPdfPaymentData(output.value);
+    if (!paymentData.cost && !paymentData.paymentMethod) return parsed;
+
+    return {
+      purchaseDate: parsed.purchaseDate,
+      flights: parsed.flights.map(function (flight, index) {
+        return {
+          ...flight,
+          cost: index === 0 && paymentData.cost ? paymentData.cost : flight.cost,
+          paymentMethod: paymentData.paymentMethod || flight.paymentMethod,
+        };
+      }),
+    };
+  } catch (e) {
+    return parsed;
+  }
+}
+
 /**
  * Heuristic: cut the email to the relevant itinerary/reservation section.
  * JetSMART emails can be extremely long due to legal/regulations blocks.
@@ -496,6 +612,17 @@ exports.handler = async function (event) {
 
   var aerolineasParsed = parseAerolineasArgentinasEmail(emailText);
   if (aerolineasParsed) {
+    if (pdfData && apiKey) {
+      var aerolineasWithPayment = await enrichAerolineasWithPdfPayment({
+        parsed: aerolineasParsed,
+        apiKey: apiKey,
+        model: "gemini-2.5-flash",
+        emailText: emailText,
+        pdfData: pdfData,
+      });
+      return jsonResponse(200, aerolineasWithPayment);
+    }
+
     return jsonResponse(200, aerolineasParsed);
   }
 
