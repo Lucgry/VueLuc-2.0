@@ -107,7 +107,12 @@ export const parseFlightEmail = async (
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      const msg = data?.error || `Error llamando a Gemini (status ${res.status})`;
+      const details = data?.details ? `\n\nDetalles Google:\n${data.details}` : "";
+      const modelUsed = data?.modelUsed ? `\nModelo: ${data.modelUsed}` : "";
+      const msg =
+        `${data?.error || `Error llamando a Gemini (status ${res.status})`}` +
+        modelUsed +
+        details;
       throw new Error(msg);
     }
 
