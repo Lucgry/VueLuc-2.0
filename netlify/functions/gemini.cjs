@@ -382,15 +382,16 @@ function extractRelevantEmailSection(emailText) {
   var jetStart = t.search(/DETALLE\s+RESERVA/i);
   if (jetStart !== -1) {
     var candidates = [];
-    var a = t.search(/INFORMACI[ÓO]N\s+DE\s+LA\s+AEROL[IÍ]NEA/i);
-    var b = t.search(/REGULACIONES/i);
-    var c = t.search(/Condiciones\s+Generales/i);
-    var d = t.search(/Devoluciones/i);
+    var afterJetStart = t.slice(jetStart);
+    var a = afterJetStart.search(/INFORMACI[ÓO]N\s+DE\s+LA\s+AEROL[IÍ]NEA/i);
+    var b = afterJetStart.search(/REGULACIONES/i);
+    var c = afterJetStart.search(/Condiciones\s+Generales/i);
+    var d = afterJetStart.search(/Devoluciones/i);
 
-    if (a !== -1) candidates.push(a);
-    if (b !== -1) candidates.push(b);
-    if (c !== -1) candidates.push(c);
-    if (d !== -1) candidates.push(d);
+    if (a > 0) candidates.push(jetStart + a);
+    if (b > 0) candidates.push(jetStart + b);
+    if (c > 0) candidates.push(jetStart + c);
+    if (d > 0) candidates.push(jetStart + d);
 
     var jetEnd = t.length;
     if (candidates.length > 0) {
