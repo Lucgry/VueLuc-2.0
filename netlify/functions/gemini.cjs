@@ -732,10 +732,22 @@ exports.handler = async function (event) {
       var out2 = parseModelOutputToJson(ct2);
 
       if (!out2.ok) {
+        var finishReason =
+          w2.value &&
+          w2.value.candidates &&
+          w2.value.candidates[0] &&
+          w2.value.candidates[0].finishReason
+            ? w2.value.candidates[0].finishReason
+            : null;
+        var ct2Length = ct2 ? ct2.length : 0;
+
         return jsonResponse(502, {
           error: "No JSON object found in Gemini content",
           parseError: out2.error ? out2.error.message : null,
+          finishReason: finishReason,
+          candidateTextLength: ct2Length,
           details: (ct2 || "").slice(0, 1200),
+          detailsTail: (ct2 || "").slice(Math.max(0, ct2Length - 500)),
         });
       }
 
