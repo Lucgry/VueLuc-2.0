@@ -51,6 +51,208 @@ async function listModels(apiKey) {
   return { status: resp.status, ok: resp.ok, text: text };
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function isAerolineasEmail(emailText) {
+  var n = normalizeSearchText(emailText);
+  return (
+    n.indexOf("aerolineas argentinas") !== -1 &&
+    n.indexOf("codigo de reserva") !== -1
+  );
+}
+
+function parseSpanishFlightDate(text) {
+  var months = {
+    enero: 0,
+    febrero: 1,
+    marzo: 2,
+    abril: 3,
+    mayo: 4,
+    junio: 5,
+    julio: 6,
+    agosto: 7,
+    septiembre: 8,
+    setiembre: 8,
+    octubre: 9,
+    noviembre: 10,
+    diciembre: 11,
+  };
+
+  var n = normalizeSearchText(text);
+  var m = n.match(
+    /(\d{1,2})(?:\s+de)?\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+(\d{4}))?/i
+  );
+  if (!m) return null;
+
+  var day = Number(m[1]);
+  var month = months[m[2]];
+  var year = m[3] ? Number(m[3]) : new Date().getFullYear();
+  var d = new Date(year, month, day);
+
+  if (!m[3]) {
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (d < today) d = new Date(year + 1, month, day);
+  }
+
+  return {
+    year: d.getFullYear(),
+    month: d.getMonth() + 1,
+    day: d.getDate(),
+  };
+}
+
+function toIsoLocal(datePart, timeText) {
+  if (!datePart || !timeText) return null;
+
+  var t = String(timeText).match(/(\d{1,2})[:.](\d{2})/);
+  if (!t) return null;
+
+  var yyyy = String(datePart.year).padStart(4, "0");
+  var mm = String(datePart.month).padStart(2, "0");
+  var dd = String(datePart.day).padStart(2, "0");
+  var hh = String(Number(t[1])).padStart(2, "0");
+  var min = String(Number(t[2])).padStart(2, "0");
+
+  return yyyy + "-" + mm + "-" + dd + "T" + hh + ":" + min + ":00";
+}
+
+function cleanAirportCity(value) {
+  return String(value || "")
+    .replace(/\s*,?\s*(ARGENTINA|ARG)$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseAirport(value) {
+  var s = String(value || "").trim();
+
+  // Examples: "SLA - SALTA", "AEP - AEROPARQUE JORGE NEWBERY"
+  var dashMatch = s.match(/\b([A-Z]{3})\s*[-–]\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ .,'-]+)/);
+  if (dashMatch) {
+    return {
+      code: dashMatch[1].toUpperCase(),
+      city: cleanAirportCity(dashMatch[2]),
+    };
+  }
+
+  // Examples: "SALTA (SLA)", "AEROPARQUE JORGE NEWBERY (AEP)"
+  var parenMatch = s.match(/([A-Za-zÁÉÍÓÚÜÑáéíóúüñ .,'-]+)\s*\(([A-Z]{3})\)/);
+  if (parenMatch) {
+    return {
+      code: parenMatch[2].toUpperCase(),
+      city: cleanAirportCity(parenMatch[1]),
+    };
+  }
+
+  // Examples: "SLA SALTA, ARGENTINA", "AEP AEROPARQUE JORGE NEWBERY"
+  var spaceMatch = s.match(/\b([A-Z]{3})\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ .,'-]+)/);
+  if (spaceMatch) {
+    return {
+      code: spaceMatch[1].toUpperCase(),
+      city: cleanAirportCity(spaceMatch[2]),
+    };
+  }
+
+  return null;
+}
+
+function parseAerolineasArgentinasEmail(emailText) {
+  if (!isAerolineasEmail(emailText)) return null;
+
+  var bookingMatch = emailText.match(
+    /c[oó]digo\s+de\s+reserva\s*:?\s*([A-Z0-9]{5,8})/i
+  );
+  var bookingReference = bookingMatch ? bookingMatch[1].toUpperCase() : null;
+  if (!bookingReference) return null;
+
+  var flightMatches = [];
+  var re = /\bAR\s*([0-9]{3,4})\b/gi;
+  var match;
+
+  while ((match = re.exec(emailText)) !== null) {
+    flightMatches.push({ index: match.index, number: "AR" + match[1] });
+  }
+
+  if (flightMatches.length === 0) return null;
+
+  var flights = [];
+
+  for (var i = 0; i < flightMatches.length; i++) {
+    var start = Math.max(0, flightMatches[i].index - 1200);
+    var end =
+      i + 1 < flightMatches.length
+        ? flightMatches[i + 1].index
+        : flightMatches[i].index + 2500;
+    var block = emailText.slice(start, end);
+    var datePart = parseSpanishFlightDate(block) || parseSpanishFlightDate(emailText);
+    var lines = block
+      .split(/\r?\n/)
+      .map(function (l) {
+        return l.trim();
+      })
+      .filter(Boolean);
+
+    var depLine = lines.find(function (l) {
+      return /salida|origen|desde/i.test(l) && parseAirport(l);
+    });
+    var arrLine = lines.find(function (l) {
+      return /llegada|destino|hacia/i.test(l) && parseAirport(l);
+    });
+
+    var airports = lines.map(parseAirport).filter(Boolean);
+    var dep = depLine ? parseAirport(depLine) : airports[0];
+    var arr = arrLine ? parseAirport(arrLine) : airports[1];
+
+    var times = block.match(/\b\d{1,2}[:.]\d{2}\b/g) || [];
+    var depTime =
+      depLine && depLine.match(/\b\d{1,2}[:.]\d{2}\b/)
+        ? depLine.match(/\b\d{1,2}[:.]\d{2}\b/)[0]
+        : times[0];
+    var arrTime =
+      arrLine && arrLine.match(/\b\d{1,2}[:.]\d{2}\b/)
+        ? arrLine.match(/\b\d{1,2}[:.]\d{2}\b/)[0]
+        : times[1];
+
+    var departureDateTime = toIsoLocal(datePart, depTime);
+    var arrivalDateTime = toIsoLocal(datePart, arrTime);
+
+    if (departureDateTime && arrivalDateTime && arrivalDateTime < departureDateTime) {
+      var arrival = new Date(arrivalDateTime);
+      arrival.setDate(arrival.getDate() + 1);
+      arrivalDateTime = arrival.toISOString().slice(0, 19);
+    }
+
+    if (dep && arr && departureDateTime) {
+      flights.push({
+        flightNumber: flightMatches[i].number,
+        airline: "Aerolíneas Argentinas",
+        departureAirportCode: dep.code,
+        departureCity: dep.city,
+        arrivalAirportCode: arr.code,
+        arrivalCity: arr.city,
+        departureDateTime: departureDateTime,
+        arrivalDateTime: arrivalDateTime,
+        cost: null,
+        paymentMethod: null,
+        bookingReference: bookingReference,
+      });
+    }
+  }
+
+  if (flights.length === 0) return null;
+
+  return {
+    flights: flights,
+    purchaseDate: flights[0].departureDateTime || new Date().toISOString(),
+  };
+}
+
 /**
  * Heuristic: cut the email to the relevant itinerary/reservation section.
  * JetSMART emails can be extremely long due to legal/regulations blocks.
@@ -247,16 +449,17 @@ exports.handler = async function (event) {
   }
 
   var apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    return jsonResponse(500, {
-      error: "GOOGLE_API_KEY not set in Netlify env vars",
-    });
-  }
 
   // Optional diagnostics
   if (event.httpMethod === "GET") {
     var qs = event.queryStringParameters || {};
     if (qs.listModels === "1") {
+      if (!apiKey) {
+        return jsonResponse(500, {
+          error: "GOOGLE_API_KEY not set in Netlify env vars",
+        });
+      }
+
       try {
         var lm = await listModels(apiKey);
         if (lm.ok) {
@@ -290,6 +493,17 @@ exports.handler = async function (event) {
 
   var pdfData =
     typeof pdfBase64 === "string" && pdfBase64.trim() ? pdfBase64.trim() : null;
+
+  var aerolineasParsed = parseAerolineasArgentinasEmail(emailText);
+  if (aerolineasParsed) {
+    return jsonResponse(200, aerolineasParsed);
+  }
+
+  if (!apiKey) {
+    return jsonResponse(500, {
+      error: "GOOGLE_API_KEY not set in Netlify env vars",
+    });
+  }
 
   var model = "gemini-2.5-flash";
   var sys = buildSystemInstruction(!!pdfData);
