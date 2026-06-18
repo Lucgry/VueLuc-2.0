@@ -132,21 +132,27 @@ const normalizeFlightIdentityField = (value?: string | null): string =>
   (value || "").trim().toUpperCase();
 
 const normalizeFlightNumber = (value?: string | null): string =>
-  normalizeFlightIdentityField(value).replace(/\s+/g, "");
+  normalizeFlightIdentityField(value).replace(/[^A-Z0-9]/g, "");
 
-const normalizeFlightDateTime = (value?: string | null): string =>
-  (value || "")
+const normalizeFlightDateTime = (value?: string | null): string => {
+  const match = (value || "")
     .trim()
-    .replace(
-      /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2}))?.*$/,
-      (_match, date, time, seconds) => `${date}T${time}:${seconds || "00"}`
-    );
+    .match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
 
-const getTripFlights = (trip: {
-  departureFlight?: Flight | null;
-  returnFlight?: Flight | null;
-}): Flight[] =>
-  [trip.departureFlight ?? null, trip.returnFlight ?? null].filter(Boolean) as Flight[];
+  return match ? `${match[1]}T${match[2]}` : "";
+};
+
+const getTripFlights = (trip: Trip): Flight[] => {
+  const normalized = normalizeTripFlights(trip);
+  const flights = [
+    trip.departureFlight ?? null,
+    trip.returnFlight ?? null,
+    normalized.idaFlight ?? null,
+    normalized.vueltaFlight ?? null,
+  ].filter(Boolean) as Flight[];
+
+  return flights.filter((flight, index) => flights.indexOf(flight) === index);
+};
 
 const flightMatchesIdentity = (candidate: Flight, existing: Flight): boolean => {
   const candidateBooking = normalizeFlightIdentityField(candidate.bookingReference);
