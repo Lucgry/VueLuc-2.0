@@ -540,23 +540,52 @@ function extractCandidateText(wrapperValue) {
   return joined ? joined : null;
 }
 
+function stripMarkdownJsonFence(text) {
+  if (typeof text !== "string") return "";
+  return text.replace(/```json/gi, "").replace(/```/g, "").trim();
+}
+
+function removeTrailingJsonCommas(text) {
+  return String(text || "").replace(/,\s*([}\]])/g, "$1");
+}
+
 function parseModelOutputToJson(candidateText) {
   if (!candidateText) return { ok: false, error: new Error("empty candidateText") };
 
+  var cleaned = stripMarkdownJsonFence(candidateText);
+
   // Try direct JSON first
-  var direct = safeJsonParse(candidateText);
+  var direct = safeJsonParse(cleaned);
   if (direct.ok) return direct;
 
+  var noTrailingCommas = removeTrailingJsonCommas(cleaned);
+  var directNoTrailingCommas = safeJsonParse(noTrailingCommas);
+  if (directNoTrailingCommas.ok) return directNoTrailingCommas;
+
   // Extract {...} block and parse
-  var jsonBlock = extractFirstJsonObject(candidateText);
+  var jsonBlock = extractFirstJsonObject(noTrailingCommas);
   if (!jsonBlock) {
-    return { ok: false, error: new Error("No JSON object found") };
+    return {
+      ok: false,
+      error: directNoTrailingCommas.error || direct.error || new Error("No JSON object found"),
+    };
   }
 
   var extracted = safeJsonParse(jsonBlock);
   if (extracted.ok) return extracted;
 
-  return { ok: false, error: extracted.error || new Error("Invalid extracted JSON") };
+  var extractedNoTrailingCommas = safeJsonParse(removeTrailingJsonCommas(jsonBlock));
+  if (extractedNoTrailingCommas.ok) return extractedNoTrailingCommas;
+
+  return {
+    ok: false,
+    error:
+      extractedNoTrailingCommas.error ||
+      extracted.error ||
+      directNoTrailingCommas.error ||
+      direct.error ||
+      new Error("Invalid extracted JSON"),
+  };
 }
 
 exports.handler = async function (event) {
@@ -705,6 +734,7 @@ exports.handler = async function (event) {
       if (!out2.ok) {
         return jsonResponse(502, {
           error: "No JSON object found in Gemini content",
+          parseError: out2.error ? out2.error.message : null,
           details: (ct2 || "").slice(0, 1200),
         });
       }
