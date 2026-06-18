@@ -20,15 +20,18 @@ export const AirlineLogo: React.FC<AirlineLogoProps> = ({ airline, size = 'md', 
         md: 'h-5'  // 20px
     };
 
-    const lowerCaseAirline = airline.toLowerCase();
+    const normalizedAirline = airline
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
     
-    if (lowerCaseAirline.includes('aerolineas')) {
+    if (normalizedAirline.includes('aerolineas')) {
         const combinedClassName = `${heightClasses[size]} w-auto ${className}`;
         // AerolineasLogo now contains the 'condor' isotipo, so it's used for all cases.
         return <AerolineasLogo className={`${combinedClassName} text-[#00A1DE]`} />;
     }
     
-    if (lowerCaseAirline.includes('jetsmart') || lowerCaseAirline.includes('jet smart')) {
+    if (normalizedAirline.includes('jetsmart') || normalizedAirline.includes('jet smart')) {
         // Further reduced sizes for visual consistency with Aerolineas
         const sizeClasses = {
             xs: 'h-4 w-4', // 16px
