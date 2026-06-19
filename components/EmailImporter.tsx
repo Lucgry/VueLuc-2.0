@@ -128,7 +128,12 @@ const EmailImporter: React.FC<EmailImporterProps> = ({
       }
 
       // Importar todos (en orden)
-      for (const t of newTrips) {
+      for (const [index, t] of newTrips.entries()) {
+        console.warn("[Vueluc email import diagnostic]", {
+          onAddTripCall: index + 1,
+          totalTripsFromEmail: newTrips.length,
+          trip: t,
+        });
         await onAddTrip(t);
       }
 
