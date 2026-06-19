@@ -22,7 +22,7 @@ import { MailIcon } from "./components/icons/MailIcon";
 import { InformationCircleIcon } from "./components/icons/InformationCircleIcon";
 import { ClockIcon } from "./components/icons/ClockIcon";
 
-import { deleteBoardingPassesForTrip } from "./services/db";
+import { deleteBoardingPassesForTrip, moveBoardingPass } from "./services/db";
 
 // ✅ normalización ida/vuelta (tu lógica)
 import {
@@ -191,6 +191,42 @@ const flightAlreadyExists = (candidate: Flight, existingTrips: Trip[]): boolean 
     )
   );
 
+const getInvalidRoundTripFlights = (
+  trip: Trip
+): { idaFlight: Flight; vueltaFlight: Flight } | null => {
+  const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
+  if (!idaFlight || !vueltaFlight) return null;
+  return isValidRoundTripPair(idaFlight, vueltaFlight)
+    ? null
+    : { idaFlight, vueltaFlight };
+};
+
+const splitInvalidRoundTripsForDisplay = (sourceTrips: Trip[]): Trip[] =>
+  sourceTrips.flatMap((trip) => {
+    const invalid = getInvalidRoundTripFlights(trip);
+    if (!invalid) return [trip];
+
+    console.warn("Grupo invalido separado para render local", {
+      tripId: trip.id,
+      ida: invalid.idaFlight.departureDateTime,
+      vuelta: invalid.vueltaFlight.departureDateTime,
+    });
+
+    return [
+      {
+        ...trip,
+        departureFlight: invalid.idaFlight,
+        returnFlight: null,
+      },
+      {
+        ...trip,
+        id: `${trip.id}__vuelta_split_pending`,
+        departureFlight: null,
+        returnFlight: invalid.vueltaFlight,
+      },
+    ];
+  });
+
 /* ------------------------------------------------------------------ */
 /* Auth Error Screen                                                    */
 /* ------------------------------------------------------------------ */
@@ -267,10 +303,47 @@ const App: React.FC = () => {
 
   // refs
   const processingRef = useRef(false);
+  const sanitizingTripIdsRef = useRef<Set<string>>(new Set());
 
   /* -------------------- config: ventana temporal auto-agrupado -------------------- */
   // Ajustable: si querés más estricto, bajalo (ej 7-10 días). Si querés más flexible, subilo (ej 30-45).
   const AUTO_GROUP_WINDOW_DAYS = DEFAULT_MAX_ROUND_TRIP_DAYS;
+
+  const splitInvalidPersistedTrip = async (
+    trip: Trip,
+    idaFlight: Flight,
+    vueltaFlight: Flight
+  ) => {
+    if (!user || !db || sanitizingTripIdsRef.current.has(trip.id)) return;
+
+    sanitizingTripIdsRef.current.add(trip.id);
+
+    try {
+      console.warn("Corrigiendo grupo persistido invalido en Firestore", {
+        tripId: trip.id,
+        ida: idaFlight.departureDateTime,
+        vuelta: vueltaFlight.departureDateTime,
+      });
+
+      await updateDoc(doc(db, "users", user.uid, "trips", trip.id), {
+        departureFlight: idaFlight,
+        returnFlight: null,
+      });
+
+      const vueltaDoc = await addDoc(collection(db, "users", user.uid, "trips"), {
+        departureFlight: null,
+        returnFlight: vueltaFlight,
+        purchaseDate: trip.purchaseDate || idaFlight.departureDateTime || new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      });
+
+      await moveBoardingPass(user.uid, trip.id, vueltaDoc.id, "vuelta");
+    } catch (error) {
+      console.error("No se pudo corregir el grupo persistido invalido:", error);
+    } finally {
+      sanitizingTripIdsRef.current.delete(trip.id);
+    }
+  };
 
   /* -------------------- auth -------------------- */
 
@@ -331,6 +404,17 @@ const App: React.FC = () => {
         const list: Trip[] = [];
         snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
         setTrips(list);
+
+        for (const trip of list) {
+          const invalid = getInvalidRoundTripFlights(trip);
+          if (invalid) {
+            void splitInvalidPersistedTrip(
+              trip,
+              invalid.idaFlight,
+              invalid.vueltaFlight
+            );
+          }
+        }
       },
       (err) => {
         console.error("Firestore onSnapshot error:", err);
@@ -624,11 +708,16 @@ const App: React.FC = () => {
   /* IMPORTANT: useMemo SIEMPRE ANTES de cualquier return condicional     */
   /* ------------------------------------------------------------------ */
 
+  const displayTrips = useMemo(
+    () => splitInvalidRoundTripsForDisplay(trips),
+    [trips]
+  );
+
   const futureTrips = useMemo(() => {
-    if (!trips?.length) return [];
+    if (!displayTrips?.length) return [];
     const now = new Date();
 
-    return [...trips]
+    return [...displayTrips]
       .filter((t) => {
         const end = getTripEndDate(t);
         return !!end && end > now;
@@ -638,7 +727,7 @@ const App: React.FC = () => {
         const sb = getTripStartDate(b)?.getTime() || 0;
         return sa - sb;
       });
-  }, [trips]);
+  }, [displayTrips]);
 
   const nextTrip = futureTrips[0] ?? null;
 
@@ -655,10 +744,10 @@ const App: React.FC = () => {
   }, [nextTrip]);
 
   const filteredTrips = useMemo(() => {
-  if (!trips?.length) return [];
+  if (!displayTrips?.length) return [];
   const now = new Date();
 
-  const filtered = [...trips].filter((t) => {
+  const filtered = [...displayTrips].filter((t) => {
     const s = getTripStartDate(t);
     const e = getTripEndDate(t);
 
@@ -685,7 +774,7 @@ const App: React.FC = () => {
   if (listFilter === "completed") filtered.reverse();
 
   return filtered;
-}, [trips, listFilter]);
+}, [displayTrips, listFilter]);
 
   /* -------------------- render guards (DESPUÉS de hooks) -------------------- */
 
@@ -821,8 +910,8 @@ const App: React.FC = () => {
           </>
         )}
 
-        {view === "calendar" && <CalendarView trips={trips} />}
-        {view === "costs" && <CostSummary trips={trips} />}
+        {view === "calendar" && <CalendarView trips={displayTrips} />}
+        {view === "costs" && <CostSummary trips={displayTrips} />}
 
         {/* FAB */}
         <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end space-y-3">

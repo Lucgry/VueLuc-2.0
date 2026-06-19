@@ -268,7 +268,7 @@ const TripCard: React.FC<TripCardProps> = ({
     if (!idaFlight || !vueltaFlight || !hasValidRoundTrip)
       return {
         type: "pill" as const,
-        text: !idaFlight || !vueltaFlight ? "Tramo único" : "Fechas invalidas",
+        text: "Tramo único",
         Icon: ExclamationTriangleIcon,
         color: "text-orange-800 dark:text-orange-200",
         bg: "bg-orange-100 dark:bg-orange-500/20",
@@ -452,8 +452,6 @@ const TripCard: React.FC<TripCardProps> = ({
   let tripTypeText: string;
   if (idaFlight && vueltaFlight && hasValidRoundTrip) {
     tripTypeText = "Ida y Vuelta";
-  } else if (idaFlight && vueltaFlight) {
-    tripTypeText = "Fechas invalidas";
   } else if (idaFlight) {
     tripTypeText = "Ida";
   } else if (vueltaFlight) {
