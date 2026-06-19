@@ -23,6 +23,10 @@ import { InformationCircleIcon } from "./components/icons/InformationCircleIcon"
 import { ClockIcon } from "./components/icons/ClockIcon";
 
 import { deleteBoardingPassesForTrip, moveBoardingPass } from "./services/db";
+import {
+  importTripsFromGmail,
+  type GmailImportSettings,
+} from "./services/gmailImport";
 
 // ✅ normalización ida/vuelta (tu lógica)
 import {
@@ -32,7 +36,12 @@ import {
   normalizeTripFlights,
 } from "./services/tripLeg";
 
-import { onAuthStateChanged, User } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  User,
+} from "firebase/auth";
 import {
   db,
   auth,
@@ -49,6 +58,8 @@ import {
   query,
   orderBy,
   updateDoc,
+  getDoc,
+  setDoc,
 } from "firebase/firestore";
 
 /* ------------------------------------------------------------------ */
@@ -443,6 +454,15 @@ const App: React.FC = () => {
   const [listFilter, setListFilter] = useState<ListFilter>("future");
 
   const [isAirportMode, setIsAirportMode] = useState(false);
+  const [gmailImportState, setGmailImportState] = useState<{
+    loading: boolean;
+    message: string | null;
+    error: string | null;
+  }>({
+    loading: false,
+    message: null,
+    error: null,
+  });
 
   // Agrupamiento manual (modo selección)
   const [groupingState, setGroupingState] = useState<{
@@ -472,6 +492,29 @@ const App: React.FC = () => {
   /* -------------------- config: ventana temporal auto-agrupado -------------------- */
   // Ajustable: si querés más estricto, bajalo (ej 7-10 días). Si querés más flexible, subilo (ej 30-45).
   const AUTO_GROUP_WINDOW_DAYS = DEFAULT_MAX_ROUND_TRIP_DAYS;
+
+  const getGmailImportSettingsRef = () => {
+    if (!user || !db) return null;
+    return doc(db, "users", user.uid, "settings", "gmailImport");
+  };
+
+  const getGmailReadonlyAccessToken = async (): Promise<string> => {
+    if (!auth) throw new Error("Firebase Auth no esta inicializado.");
+
+    const provider = new GoogleAuthProvider();
+    provider.addScope("https://www.googleapis.com/auth/gmail.readonly");
+    provider.setCustomParameters({ prompt: "consent" });
+
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const accessToken = credential?.accessToken;
+
+    if (!accessToken) {
+      throw new Error("No se pudo obtener permiso de lectura de Gmail.");
+    }
+
+    return accessToken;
+  };
 
   const splitInvalidPersistedTrip = async (
     trip: Trip,
@@ -978,6 +1021,72 @@ const App: React.FC = () => {
     }
   };
 
+  const handleGmailImport = async () => {
+    if (!user || !db) return;
+
+    const settingsRef = getGmailImportSettingsRef();
+    if (!settingsRef) return;
+
+    setGmailImportState({
+      loading: true,
+      message: "Buscando correos...",
+      error: null,
+    });
+
+    try {
+      const accessToken = await getGmailReadonlyAccessToken();
+      const settingsSnap = await getDoc(settingsRef);
+      const settings = (settingsSnap.exists()
+        ? settingsSnap.data()
+        : {}) as GmailImportSettings;
+
+      const result = await importTripsFromGmail(accessToken, settings);
+
+      for (const trip of result.trips) {
+        await onAddTrip(trip);
+      }
+
+      const message =
+        result.trips.length > 0
+          ? `${result.trips.length} vuelos importados`
+          : "Sin vuelos nuevos";
+
+      await setDoc(
+        settingsRef,
+        {
+          lastScanAt: new Date().toISOString(),
+          processedMessageIds: result.processedMessageIds,
+          lastResult: message,
+          lastError: null,
+        },
+        { merge: true }
+      );
+
+      setGmailImportState({
+        loading: false,
+        message,
+        error: null,
+      });
+    } catch (error: any) {
+      const message = error?.message || "No se pudo importar desde Gmail.";
+
+      await setDoc(
+        settingsRef,
+        {
+          lastScanAt: new Date().toISOString(),
+          lastError: message,
+        },
+        { merge: true }
+      ).catch(() => {});
+
+      setGmailImportState({
+        loading: false,
+        message: null,
+        error: message,
+      });
+    }
+  };
+
   /* ------------------------------------------------------------------ */
   /* IMPORTANT: useMemo SIEMPRE ANTES de cualquier return condicional     */
   /* ------------------------------------------------------------------ */
@@ -1152,6 +1261,30 @@ const App: React.FC = () => {
                 flightType={nextTripFlightType}
               />
             )}
+
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <button
+                type="button"
+                onClick={handleGmailImport}
+                disabled={gmailImportState.loading}
+                className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-semibold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <MailIcon className="w-5 h-5 mr-2" />
+                {gmailImportState.loading ? "Buscando correos..." : "Importar desde Gmail"}
+              </button>
+
+              {(gmailImportState.message || gmailImportState.error) && (
+                <p
+                  className={`text-sm ${
+                    gmailImportState.error
+                      ? "text-red-600 dark:text-red-300"
+                      : "text-green-700 dark:text-green-300"
+                  }`}
+                >
+                  {gmailImportState.error || gmailImportState.message}
+                </p>
+              )}
+            </div>
 
             {/* Filter chips */}
             <div className="flex overflow-x-auto space-x-2 pb-2 mb-4">

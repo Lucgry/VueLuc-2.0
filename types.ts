@@ -12,6 +12,12 @@ export interface Flight {
   cost: number | null;
   paymentMethod: string | null;
   bookingReference: string | null;
+  passengerName?: string | null;
+  source?: "gmail" | "manual" | "email" | null;
+  gmailMessageId?: string | null;
+  gmailSubject?: string | null;
+  gmailDate?: string | null;
+  gmailFrom?: string | null;
 }
 
 export interface Trip {
