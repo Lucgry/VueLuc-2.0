@@ -154,58 +154,7 @@ const getTripFlights = (trip: Trip): Flight[] => {
   return flights.filter((flight, index) => flights.indexOf(flight) === index);
 };
 
-const getFlightDuplicateDebug = (flight?: Flight | null) =>
-  flight
-    ? {
-        bookingReference: normalizeFlightIdentityField(flight.bookingReference),
-        flightNumber: normalizeFlightNumber(flight.flightNumber),
-        departureDateTime: normalizeFlightDateTime(flight.departureDateTime),
-        departureAirportCode: normalizeFlightIdentityField(
-          flight.departureAirportCode
-        ),
-        arrivalAirportCode: normalizeFlightIdentityField(flight.arrivalAirportCode),
-        airline: normalizeFlightIdentityField(flight.airline),
-        raw: {
-          bookingReference: flight.bookingReference,
-          flightNumber: flight.flightNumber,
-          departureDateTime: flight.departureDateTime,
-          departureAirportCode: flight.departureAirportCode,
-          arrivalAirportCode: flight.arrivalAirportCode,
-          airline: flight.airline,
-        },
-      }
-    : null;
-
-const getTripDuplicateDebugFlights = (trip: Trip) => {
-  const normalized = normalizeTripFlights(trip);
-  return [
-    { tripId: trip.id, slot: "departureFlight", flight: trip.departureFlight },
-    { tripId: trip.id, slot: "returnFlight", flight: trip.returnFlight },
-    { tripId: trip.id, slot: "normalized.idaFlight", flight: normalized.idaFlight },
-    {
-      tripId: trip.id,
-      slot: "normalized.vueltaFlight",
-      flight: normalized.vueltaFlight,
-    },
-  ]
-    .filter((entry) => !!entry.flight)
-    .map((entry) => ({
-      tripId: entry.tripId,
-      slot: entry.slot,
-      flight: getFlightDuplicateDebug(entry.flight),
-    }));
-};
-
 const flightMatchesIdentity = (candidate: Flight, existing: Flight): boolean => {
-  const candidateBooking = normalizeFlightIdentityField(candidate.bookingReference);
-  const existingBooking = normalizeFlightIdentityField(existing.bookingReference);
-
-  // Si ambos tienen reserva, debe coincidir. Si falta en alguno, no la usamos
-  // como bloqueo porque imports antiguos/manuales pueden no tenerla.
-  if (candidateBooking && existingBooking && candidateBooking !== existingBooking) {
-    return false;
-  }
-
   const candidateFlightNumber = normalizeFlightNumber(candidate.flightNumber);
   const existingFlightNumber = normalizeFlightNumber(existing.flightNumber);
   const candidateDeparture = normalizeFlightDateTime(candidate.departureDateTime);
@@ -512,28 +461,12 @@ const App: React.FC = () => {
     processingRef.current = true;
 
     try {
-      const duplicateDepartureResult =
+      const duplicateDeparture =
         !!tripData.departureFlight &&
         flightAlreadyExists(tripData.departureFlight, trips);
-      const duplicateReturnResult =
+      const duplicateReturn =
         !!tripData.returnFlight &&
         flightAlreadyExists(tripData.returnFlight, trips);
-
-      console.warn("[Vueluc duplicate import diagnostic]", {
-        tripsLoaded: trips.length,
-        importedDepartureFlight: getFlightDuplicateDebug(tripData.departureFlight),
-        importedReturnFlight: getFlightDuplicateDebug(tripData.returnFlight),
-        existingFlights: trips.flatMap(getTripDuplicateDebugFlights),
-        results: {
-          departureFlightAlreadyExists: duplicateDepartureResult,
-          returnFlightAlreadyExists: duplicateReturnResult,
-        },
-      });
-
-      const duplicateDeparture =
-        duplicateDepartureResult;
-      const duplicateReturn =
-        duplicateReturnResult;
 
       const tripToSave: Omit<Trip, "id" | "createdAt"> = {
         ...tripData,
