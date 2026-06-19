@@ -1,94 +1,93 @@
 // services/groupFlights.ts
 import type { Flight } from "../types";
+import {
+  DEFAULT_MAX_ROUND_TRIP_DAYS,
+  isBuenosAiresAirportCode,
+  isSaltaAirportCode,
+  isValidRoundTripPair,
+  parseFlightDate,
+} from "./tripLeg.ts";
 
 export interface TripGroup {
   outbound: Flight;
   inbound?: Flight;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function toUpperSafe(v: unknown): string {
-  return typeof v === "string" ? v.toUpperCase().trim() : "";
+function getDepartureMs(flight: Flight): number {
+  return parseFlightDate(flight.departureDateTime)?.getTime() ?? Number.POSITIVE_INFINITY;
 }
 
-function parseDateSafe(v: unknown): Date | null {
-  if (typeof v !== "string" || !v.trim()) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
+function isOutbound(flight: Flight): boolean {
+  return (
+    isSaltaAirportCode(flight.departureAirportCode) &&
+    isBuenosAiresAirportCode(flight.arrivalAirportCode)
+  );
 }
 
-function daysBetween(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / DAY_MS);
+function isInbound(flight: Flight): boolean {
+  return (
+    isBuenosAiresAirportCode(flight.departureAirportCode) &&
+    isSaltaAirportCode(flight.arrivalAirportCode)
+  );
 }
 
-function scorePair(outbound: Flight, inbound: Flight): number {
-  const outDate = parseDateSafe(outbound.departureDateTime);
-  const inDate = parseDateSafe(inbound.departureDateTime);
-  if (!outDate || !inDate) return -Infinity;
-
-  const diffDays = daysBetween(outDate, inDate);
-
-  if (diffDays >= 1 && diffDays <= 5) return 100;
-  if (diffDays >= 6 && diffDays <= 15) return 50;
-  if (diffDays >= 16 && diffDays <= 45) return 20;
-  return -Infinity;
+function sameBookingReference(a: Flight, b: Flight): boolean {
+  return !!a.bookingReference && !!b.bookingReference && a.bookingReference === b.bookingReference;
 }
 
-export function groupFlightsIntoTrips(flights: Flight[]): TripGroup[] {
-  const remaining = [...flights];
+export function groupFlightsIntoTrips(
+  flights: Flight[],
+  maxRoundTripDays = DEFAULT_MAX_ROUND_TRIP_DAYS
+): TripGroup[] {
+  const orderedFlights = [...flights].sort((a, b) => getDepartureMs(a) - getDepartureMs(b));
+  const usedInboundIndexes = new Set<number>();
   const trips: TripGroup[] = [];
 
-  while (remaining.length > 0) {
-    const outbound = remaining.shift()!;
-    const outDep = toUpperSafe(outbound.departureAirportCode);
-    const outArr = toUpperSafe(outbound.arrivalAirportCode);
-    const outDate = parseDateSafe(outbound.departureDateTime);
+  for (let i = 0; i < orderedFlights.length; i++) {
+    const outbound = orderedFlights[i];
 
-    // Si falta info mínima, queda one-way
-    if (!outDep || !outArr || !outDate) {
+    if (usedInboundIndexes.has(i)) continue;
+
+    if (!isOutbound(outbound)) {
       trips.push({ outbound });
       continue;
     }
 
     let bestIndex: number | null = null;
-    let bestScore = -Infinity;
+    let bestMs = Number.POSITIVE_INFINITY;
 
-    for (let i = 0; i < remaining.length; i++) {
-      const candidate = remaining[i];
+    for (let j = i + 1; j < orderedFlights.length; j++) {
+      if (usedInboundIndexes.has(j)) continue;
 
-      const candDep = toUpperSafe(candidate.departureAirportCode);
-      const candArr = toUpperSafe(candidate.arrivalAirportCode);
-      const candDate = parseDateSafe(candidate.departureDateTime);
+      const candidate = orderedFlights[j];
 
-      if (!candDep || !candArr || !candDate) continue;
-
-      // Aeropuertos invertidos
-      if (outDep !== candArr || outArr !== candDep) continue;
-
-      // Vuelta posterior
-      if (candDate <= outDate) continue;
-
-      let score = scorePair(outbound, candidate);
-
-      // Bonus bookingReference (si existe)
-      if (
-        outbound.bookingReference &&
-        candidate.bookingReference &&
-        outbound.bookingReference === candidate.bookingReference
-      ) {
-        score += 30;
+      if (!isInbound(candidate)) continue;
+      if (!isValidRoundTripPair(outbound, candidate, maxRoundTripDays)) {
+        console.info("[groupFlights] Vuelta descartada para ida por temporalidad/ruta invalida", {
+          ida: outbound.departureDateTime,
+          vuelta: candidate.departureDateTime,
+          idaRoute: `${outbound.departureAirportCode}-${outbound.arrivalAirportCode}`,
+          vueltaRoute: `${candidate.departureAirportCode}-${candidate.arrivalAirportCode}`,
+        });
+        continue;
       }
 
-      if (score > bestScore) {
-        bestScore = score;
-        bestIndex = i;
+      const candidateMs = getDepartureMs(candidate);
+      if (
+        candidateMs < bestMs ||
+        (candidateMs === bestMs &&
+          bestIndex !== null &&
+          sameBookingReference(outbound, candidate) &&
+          !sameBookingReference(outbound, orderedFlights[bestIndex]))
+      ) {
+        bestMs = candidateMs;
+        bestIndex = j;
       }
     }
 
     if (bestIndex !== null) {
-      const inbound = remaining.splice(bestIndex, 1)[0];
-      trips.push({ outbound, inbound });
+      usedInboundIndexes.add(bestIndex);
+      trips.push({ outbound, inbound: orderedFlights[bestIndex] });
     } else {
       trips.push({ outbound });
     }

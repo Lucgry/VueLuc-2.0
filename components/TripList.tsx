@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Trip } from '../types';
 import TripCard from './TripCard';
+import { isValidRoundTripPair, normalizeTripFlights } from '../services/tripLeg';
 import { ArrowUpRightIcon } from './icons/ArrowUpRightIcon';
 import { CalendarClockIcon } from './icons/CalendarClockIcon';
 import { CheckBadgeIcon } from './icons/CheckBadgeIcon';
@@ -43,10 +44,21 @@ const emptyMessages = {
 };
 
 const getTripStartDate = (trip: Trip): string | null => {
-    return trip.departureFlight?.departureDateTime || trip.returnFlight?.departureDateTime || null;
+    const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
+    return idaFlight?.departureDateTime || vueltaFlight?.departureDateTime || null;
 }
 const getTripEndDate = (trip: Trip): string | null => {
-    return trip.returnFlight?.arrivalDateTime || trip.departureFlight?.arrivalDateTime || null;
+    const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
+    if (idaFlight && vueltaFlight && isValidRoundTripPair(idaFlight, vueltaFlight)) {
+      return vueltaFlight.arrivalDateTime || vueltaFlight.departureDateTime || null;
+    }
+    return (
+      idaFlight?.arrivalDateTime ||
+      idaFlight?.departureDateTime ||
+      vueltaFlight?.arrivalDateTime ||
+      vueltaFlight?.departureDateTime ||
+      null
+    );
 }
 
 const YearSeparator: React.FC<{ year: number }> = ({ year }) => (

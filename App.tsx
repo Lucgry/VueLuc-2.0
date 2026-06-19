@@ -25,7 +25,12 @@ import { ClockIcon } from "./components/icons/ClockIcon";
 import { deleteBoardingPassesForTrip } from "./services/db";
 
 // ✅ normalización ida/vuelta (tu lógica)
-import { normalizeTripFlights } from "./services/tripLeg";
+import {
+  DEFAULT_MAX_ROUND_TRIP_DAYS,
+  getRoundTripGapDays,
+  isValidRoundTripPair,
+  normalizeTripFlights,
+} from "./services/tripLeg";
 
 import { onAuthStateChanged, User } from "firebase/auth";
 import {
@@ -74,16 +79,20 @@ const filterOptions: { key: ListFilter; label: string }[] = [
 ];
 
 const getTripStartDate = (trip: Trip): Date | null => {
-  const d =
-    trip.departureFlight?.departureDateTime ||
-    trip.returnFlight?.departureDateTime;
+  const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
+  const d = idaFlight?.departureDateTime || vueltaFlight?.departureDateTime;
   return d ? new Date(d) : null;
 };
 
 const getTripEndDate = (trip: Trip): Date | null => {
+  const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
   const d =
-    trip.returnFlight?.arrivalDateTime ||
-    trip.departureFlight?.arrivalDateTime;
+    idaFlight && vueltaFlight && isValidRoundTripPair(idaFlight, vueltaFlight)
+      ? vueltaFlight.arrivalDateTime || vueltaFlight.departureDateTime
+      : idaFlight?.arrivalDateTime ||
+        idaFlight?.departureDateTime ||
+        vueltaFlight?.arrivalDateTime ||
+        vueltaFlight?.departureDateTime;
   return d ? new Date(d) : null;
 };
 
@@ -91,16 +100,6 @@ const safeDate = (iso?: string | null): Date | null => {
   if (!iso) return null;
   const d = new Date(iso);
   return isNaN(d.getTime()) ? null : d;
-};
-
-const daysBetween = (
-  aIso?: string | null,
-  bIso?: string | null
-): number | null => {
-  const a = safeDate(aIso);
-  const b = safeDate(bIso);
-  if (!a || !b) return null;
-  return Math.abs(a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24);
 };
 
 const pickOldestIso = (a?: string | null, b?: string | null): string | null => {
@@ -271,7 +270,7 @@ const App: React.FC = () => {
 
   /* -------------------- config: ventana temporal auto-agrupado -------------------- */
   // Ajustable: si querés más estricto, bajalo (ej 7-10 días). Si querés más flexible, subilo (ej 30-45).
-  const AUTO_GROUP_WINDOW_DAYS = 21;
+  const AUTO_GROUP_WINDOW_DAYS = DEFAULT_MAX_ROUND_TRIP_DAYS;
 
   /* -------------------- auth -------------------- */
 
@@ -410,6 +409,14 @@ const App: React.FC = () => {
     const vueltaFlight = sLeg === "vuelta" ? sNorm.vueltaFlight : tNorm.vueltaFlight;
 
     if (!idaFlight || !vueltaFlight) return;
+    if (!isValidRoundTripPair(idaFlight, vueltaFlight, AUTO_GROUP_WINDOW_DAYS)) {
+      console.warn("Agrupamiento rechazado: vuelta anterior, ruta invalida o fuera de ventana.", {
+        ida: idaFlight.departureDateTime,
+        vuelta: vueltaFlight.departureDateTime,
+      });
+      window.alert("No se puede agrupar: la vuelta debe ser posterior a la ida y estar dentro de 15 dias.");
+      return;
+    }
 
     const mergedPurchaseDate =
       pickOldestIso(source.purchaseDate || null, target.purchaseDate || null) ||
@@ -514,15 +521,16 @@ const App: React.FC = () => {
           const fA = legA === "ida" ? nA.idaFlight : nA.vueltaFlight;
           const fB = draftLeg === "ida" ? nB.idaFlight : nB.vueltaFlight;
 
-          const d = daysBetween(
-            fA?.departureDateTime ?? null,
-            fB?.departureDateTime ?? null
-          );
+          const idaCandidate = legA === "ida" ? fA : fB;
+          const vueltaCandidate = legA === "vuelta" ? fA : fB;
 
-          if (d != null && d <= AUTO_GROUP_WINDOW_DAYS) {
-            if (!bestMatch || d < bestMatch.score) {
-              bestMatch = { trip: existing, score: d };
-            }
+          if (!isValidRoundTripPair(idaCandidate, vueltaCandidate, AUTO_GROUP_WINDOW_DAYS)) {
+            continue;
+          }
+
+          const d = getRoundTripGapDays(idaCandidate, vueltaCandidate);
+          if (d != null && (!bestMatch || d < bestMatch.score)) {
+            bestMatch = { trip: existing, score: d };
           }
         }
 
@@ -636,12 +644,14 @@ const App: React.FC = () => {
 
   const nextTripFlight = useMemo(() => {
     if (!nextTrip) return null;
-    return nextTrip.departureFlight || nextTrip.returnFlight || null;
+    const { idaFlight, vueltaFlight } = normalizeTripFlights(nextTrip);
+    return idaFlight || vueltaFlight || null;
   }, [nextTrip]);
 
   const nextTripFlightType = useMemo<"ida" | "vuelta">(() => {
     if (!nextTrip) return "ida";
-    return nextTrip.departureFlight ? "ida" : "vuelta";
+    const { idaFlight } = normalizeTripFlights(nextTrip);
+    return idaFlight ? "ida" : "vuelta";
   }, [nextTrip]);
 
   const filteredTrips = useMemo(() => {

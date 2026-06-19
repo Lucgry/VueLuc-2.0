@@ -16,7 +16,7 @@ import { LinkSlashIcon } from "./icons/LinkSlashIcon";
 import { CalendarPlusIcon } from "./icons/CalendarPlusIcon";
 
 // ✅ NORMALIZA ida/vuelta por dirección real
-import { normalizeTripFlights } from "../services/tripLeg";
+import { isValidRoundTripPair, normalizeTripFlights } from "../services/tripLeg";
 
 const LinkIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg
@@ -244,9 +244,10 @@ const TripCard: React.FC<TripCardProps> = ({
 
   // ✅ NORMALIZADO: aunque esté mal guardado, acá se corrige
   const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
+  const hasValidRoundTrip = isValidRoundTripPair(idaFlight, vueltaFlight);
 
   const getStatus = () => {
-    if (isPast)
+    if (isPast && idaFlight && vueltaFlight && hasValidRoundTrip)
       return {
         type: "bar" as const,
         text: "Completado",
@@ -264,10 +265,10 @@ const TripCard: React.FC<TripCardProps> = ({
         textClass: "text-amber-800 dark:text-amber-200 font-semibold",
         iconColor: "text-amber-600 dark:text-amber-400",
       };
-    if (!idaFlight || !vueltaFlight)
+    if (!idaFlight || !vueltaFlight || !hasValidRoundTrip)
       return {
         type: "pill" as const,
-        text: "Tramo único",
+        text: !idaFlight || !vueltaFlight ? "Tramo único" : "Fechas invalidas",
         Icon: ExclamationTriangleIcon,
         color: "text-orange-800 dark:text-orange-200",
         bg: "bg-orange-100 dark:bg-orange-500/20",
@@ -449,8 +450,10 @@ const TripCard: React.FC<TripCardProps> = ({
     idaAirline && vueltaAirline && getNormalizedAirline(idaAirline) !== getNormalizedAirline(vueltaAirline);
 
   let tripTypeText: string;
-  if (idaFlight && vueltaFlight) {
+  if (idaFlight && vueltaFlight && hasValidRoundTrip) {
     tripTypeText = "Ida y Vuelta";
+  } else if (idaFlight && vueltaFlight) {
+    tripTypeText = "Fechas invalidas";
   } else if (idaFlight) {
     tripTypeText = "Ida";
   } else if (vueltaFlight) {
@@ -544,6 +547,10 @@ const TripCard: React.FC<TripCardProps> = ({
       ? "vuelta"
       : null;
 
+  const groupingIdaCandidate = sourceLeg === "ida" ? sourceNorm.idaFlight : idaFlight;
+  const groupingVueltaCandidate =
+    sourceLeg === "vuelta" ? sourceNorm.vueltaFlight : vueltaFlight;
+
   const isCompatibleTarget =
     groupingState.active &&
     !!sourceTrip &&
@@ -552,7 +559,8 @@ const TripCard: React.FC<TripCardProps> = ({
     trip.id !== sourceTrip.id &&
     !!thisLeg &&
     !!sourceLeg &&
-    thisLeg !== sourceLeg;
+    thisLeg !== sourceLeg &&
+    isValidRoundTripPair(groupingIdaCandidate, groupingVueltaCandidate);
 
   let cardClasses = `relative bg-white dark:bg-slate-800 backdrop-blur-md rounded-xl transition-all duration-300 border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden ${
     isPast ? "opacity-70 hover:opacity-100" : ""
@@ -605,7 +613,7 @@ const TripCard: React.FC<TripCardProps> = ({
             {/* --- Row 1: Date & Time --- */}
             <div className="flex justify-between items-start">
               <div className="font-bold text-lg text-slate-800 dark:text-slate-200 capitalize">
-                {idaFlight && vueltaFlight ? (
+                {idaFlight && vueltaFlight && hasValidRoundTrip ? (
                   <span>
                     {formatCompactDate(idaDate)} &rarr; {formatCompactDate(vueltaDate)}
                   </span>
@@ -680,7 +688,7 @@ const TripCard: React.FC<TripCardProps> = ({
                   </div>
                 )}
 
-                {idaFlight && vueltaFlight && (
+                {idaFlight && vueltaFlight && hasValidRoundTrip && (
                   <div className="border-r border-dashed border-slate-300 dark:border-slate-700 hidden md:block"></div>
                 )}
 
@@ -695,15 +703,17 @@ const TripCard: React.FC<TripCardProps> = ({
 
             <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
               <div className="text-sm space-y-1 text-slate-700 dark:text-slate-300 w-full sm:w-auto">
-                {idaFlight?.cost != null && (
+                {idaFlight && (
                   <p>
-                    <strong>Costo Ida:</strong> ${idaFlight.cost.toLocaleString("es-AR")} (
+                    <strong>Costo Ida:</strong>{" "}
+                    {idaFlight.cost != null ? `$${idaFlight.cost.toLocaleString("es-AR")}` : "N/A"} (
                     {formatPaymentMethod(idaFlight.paymentMethod ?? null)})
                   </p>
                 )}
-                {vueltaFlight?.cost != null && (
+                {vueltaFlight && (
                   <p>
-                    <strong>Costo Vuelta:</strong> ${vueltaFlight.cost.toLocaleString("es-AR")} (
+                    <strong>Costo Vuelta:</strong>{" "}
+                    {vueltaFlight.cost != null ? `$${vueltaFlight.cost.toLocaleString("es-AR")}` : "N/A"} (
                     {formatPaymentMethod(vueltaFlight.paymentMethod ?? null)})
                   </p>
                 )}
