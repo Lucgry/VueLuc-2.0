@@ -227,6 +227,63 @@ const splitInvalidRoundTripsForDisplay = (sourceTrips: Trip[]): Trip[] =>
     ];
   });
 
+const getFlightDepartureMs = (flight?: Flight | null): number => {
+  const d = safeDate(flight?.departureDateTime ?? null);
+  return d?.getTime() ?? Number.POSITIVE_INFINITY;
+};
+
+const findPersistedOneWayPairs = (
+  sourceTrips: Trip[],
+  maxDays = DEFAULT_MAX_ROUND_TRIP_DAYS
+): Array<{ idaTrip: Trip; vueltaTrip: Trip }> => {
+  const oneWayTrips = sourceTrips
+    .map((trip) => {
+      const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
+      const leg =
+        idaFlight && !vueltaFlight
+          ? "ida"
+          : vueltaFlight && !idaFlight
+          ? "vuelta"
+          : null;
+      const flight = leg === "ida" ? idaFlight : leg === "vuelta" ? vueltaFlight : null;
+      return { trip, leg, flight };
+    })
+    .filter((entry): entry is { trip: Trip; leg: "ida" | "vuelta"; flight: Flight } =>
+      !!entry.leg && !!entry.flight && !entry.trip.id.includes("__")
+    )
+    .sort((a, b) => getFlightDepartureMs(a.flight) - getFlightDepartureMs(b.flight));
+
+  const usedTripIds = new Set<string>();
+  const pairs: Array<{ idaTrip: Trip; vueltaTrip: Trip }> = [];
+
+  for (const outbound of oneWayTrips) {
+    if (outbound.leg !== "ida" || usedTripIds.has(outbound.trip.id)) continue;
+
+    let bestInbound: typeof outbound | null = null;
+    let bestInboundMs = Number.POSITIVE_INFINITY;
+
+    for (const inbound of oneWayTrips) {
+      if (inbound.leg !== "vuelta" || usedTripIds.has(inbound.trip.id)) continue;
+      if (inbound.trip.id === outbound.trip.id) continue;
+      if (!isValidRoundTripPair(outbound.flight, inbound.flight, maxDays)) continue;
+
+      const inboundMs = getFlightDepartureMs(inbound.flight);
+      if (inboundMs < bestInboundMs) {
+        bestInbound = inbound;
+        bestInboundMs = inboundMs;
+      }
+    }
+
+    if (bestInbound) {
+      usedTripIds.add(outbound.trip.id);
+      usedTripIds.add(bestInbound.trip.id);
+      pairs.push({ idaTrip: outbound.trip, vueltaTrip: bestInbound.trip });
+    }
+  }
+
+  return pairs;
+};
+
 /* ------------------------------------------------------------------ */
 /* Auth Error Screen                                                    */
 /* ------------------------------------------------------------------ */
@@ -304,6 +361,7 @@ const App: React.FC = () => {
   // refs
   const processingRef = useRef(false);
   const sanitizingTripIdsRef = useRef<Set<string>>(new Set());
+  const reconcilingPairKeysRef = useRef<Set<string>>(new Set());
 
   /* -------------------- config: ventana temporal auto-agrupado -------------------- */
   // Ajustable: si querés más estricto, bajalo (ej 7-10 días). Si querés más flexible, subilo (ej 30-45).
@@ -405,15 +463,32 @@ const App: React.FC = () => {
         snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
         setTrips(list);
 
-        for (const trip of list) {
-          const invalid = getInvalidRoundTripFlights(trip);
-          if (invalid) {
+        const invalidTrips = list
+          .map((trip) => ({ trip, invalid: getInvalidRoundTripFlights(trip) }))
+          .filter(
+            (entry): entry is {
+              trip: Trip;
+              invalid: { idaFlight: Flight; vueltaFlight: Flight };
+            } => !!entry.invalid
+          );
+
+        if (invalidTrips.length > 0) {
+          for (const { trip, invalid } of invalidTrips) {
             void splitInvalidPersistedTrip(
               trip,
               invalid.idaFlight,
               invalid.vueltaFlight
             );
           }
+          return;
+        }
+
+        for (const { idaTrip, vueltaTrip } of findPersistedOneWayPairs(list)) {
+          const pairKey = [idaTrip.id, vueltaTrip.id].sort().join("|");
+          if (reconcilingPairKeysRef.current.has(pairKey)) continue;
+
+          reconcilingPairKeysRef.current.add(pairKey);
+          void reconcilePersistedOneWayPair(idaTrip, vueltaTrip, pairKey);
         }
       },
       (err) => {
@@ -520,6 +595,7 @@ const App: React.FC = () => {
       : target;
 
     const remove = keep.id === source.id ? target : source;
+    const removeLeg = remove.id === source.id ? sLeg : tLeg;
 
     // Caso A: keep existe en Firestore seguro (o sea, keep no es draft)
     await updateDoc(doc(db, "users", user.uid, "trips", keep.id), {
@@ -532,8 +608,30 @@ const App: React.FC = () => {
     // Caso B: si remove existe en Firestore, lo borramos.
     // Si remove es draft, no hay nada que borrar.
     if (remove.id !== "__draft__") {
+      await moveBoardingPass(user.uid, remove.id, keep.id, removeLeg);
       await deleteDoc(doc(db, "users", user.uid, "trips", remove.id));
       await deleteBoardingPassesForTrip(user.uid, remove.id);
+    }
+  };
+
+  const reconcilePersistedOneWayPair = async (
+    idaTrip: Trip,
+    vueltaTrip: Trip,
+    pairKey: string
+  ) => {
+    try {
+      console.info("Reagrupando tramos persistidos validos", {
+        idaTripId: idaTrip.id,
+        vueltaTripId: vueltaTrip.id,
+        ida: normalizeTripFlights(idaTrip).idaFlight?.departureDateTime,
+        vuelta: normalizeTripFlights(vueltaTrip).vueltaFlight?.departureDateTime,
+      });
+
+      await mergeTwoTrips(idaTrip, vueltaTrip);
+    } catch (error) {
+      console.error("No se pudo reagrupar tramos persistidos validos:", error);
+    } finally {
+      reconcilingPairKeysRef.current.delete(pairKey);
     }
   };
 
