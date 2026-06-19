@@ -284,6 +284,110 @@ const findPersistedOneWayPairs = (
   return pairs;
 };
 
+const shouldCorrectLikelyNextYearFlight = (
+  flight: Flight | null | undefined,
+  referenceDate: Date | null
+): boolean => {
+  const flightDate = safeDate(flight?.departureDateTime ?? null);
+  if (!flightDate || !referenceDate) return false;
+
+  const refYear = referenceDate.getFullYear();
+  const refMonth = referenceDate.getMonth();
+  const flightYear = flightDate.getFullYear();
+  const flightMonth = flightDate.getMonth();
+
+  if (flightYear !== refYear + 1) return false;
+  if (refMonth === 11 && flightMonth <= 1) return false;
+
+  return flightMonth < refMonth;
+};
+
+const shiftFlightYear = (flight: Flight, yearDelta: number): Flight => {
+  const shiftIso = (value?: string | null): string | null => {
+    const date = safeDate(value ?? null);
+    if (!date) return value ?? null;
+    date.setFullYear(date.getFullYear() + yearDelta);
+    return date.toISOString();
+  };
+
+  return {
+    ...flight,
+    departureDateTime: shiftIso(flight.departureDateTime),
+    arrivalDateTime: shiftIso(flight.arrivalDateTime),
+  };
+};
+
+const getLikelyYearCorrection = (
+  trip: Trip
+): { departureFlight: Flight | null; returnFlight: Flight | null; purchaseDate?: string } | null => {
+  const referenceDate =
+    safeDate(trip.createdAt || null) ||
+    safeDate(trip.purchaseDate || null);
+
+  if (!referenceDate || referenceDate.getFullYear() >= 2027) return null;
+
+  let changed = false;
+  const departureFlight =
+    trip.departureFlight && shouldCorrectLikelyNextYearFlight(trip.departureFlight, referenceDate)
+      ? ((changed = true), shiftFlightYear(trip.departureFlight, -1))
+      : trip.departureFlight;
+  const returnFlight =
+    trip.returnFlight && shouldCorrectLikelyNextYearFlight(trip.returnFlight, referenceDate)
+      ? ((changed = true), shiftFlightYear(trip.returnFlight, -1))
+      : trip.returnFlight;
+
+  if (!changed) return null;
+
+  const correctedFirstFlight = departureFlight || returnFlight;
+  const purchaseDate =
+    trip.purchaseDate && safeDate(trip.purchaseDate)?.getFullYear() === 2027 && correctedFirstFlight?.departureDateTime
+      ? correctedFirstFlight.departureDateTime
+      : trip.purchaseDate;
+
+  return { departureFlight, returnFlight, purchaseDate };
+};
+
+const getDuplicateOneWayTripIds = (sourceTrips: Trip[]): string[] => {
+  const seen = new Map<string, Trip>();
+  const duplicateIds: string[] = [];
+
+  for (const trip of sourceTrips) {
+    if (getInvalidRoundTripFlights(trip)) continue;
+
+    const leg = getOneWayLeg(trip);
+    if (!leg) continue;
+
+    const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
+    const flight = leg === "ida" ? idaFlight : vueltaFlight;
+    if (!flight) continue;
+
+    const key = [
+      normalizeFlightNumber(flight.flightNumber),
+      normalizeFlightDateTime(flight.departureDateTime),
+      normalizeFlightIdentityField(flight.departureAirportCode),
+      normalizeFlightIdentityField(flight.arrivalAirportCode),
+    ].join("|");
+
+    if (key.includes("||") || key.startsWith("|")) continue;
+
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, trip);
+      continue;
+    }
+
+    const existingCreatedAt = safeDate(existing.createdAt || null)?.getTime() ?? 0;
+    const tripCreatedAt = safeDate(trip.createdAt || null)?.getTime() ?? 0;
+    const deleteTrip = tripCreatedAt >= existingCreatedAt ? trip : existing;
+    const keepTrip = deleteTrip.id === trip.id ? existing : trip;
+
+    duplicateIds.push(deleteTrip.id);
+    seen.set(key, keepTrip);
+  }
+
+  return Array.from(new Set(duplicateIds));
+};
+
 /* ------------------------------------------------------------------ */
 /* Auth Error Screen                                                    */
 /* ------------------------------------------------------------------ */
@@ -362,6 +466,8 @@ const App: React.FC = () => {
   const processingRef = useRef(false);
   const sanitizingTripIdsRef = useRef<Set<string>>(new Set());
   const reconcilingPairKeysRef = useRef<Set<string>>(new Set());
+  const correctingYearTripIdsRef = useRef<Set<string>>(new Set());
+  const deletingDuplicateTripIdsRef = useRef<Set<string>>(new Set());
 
   /* -------------------- config: ventana temporal auto-agrupado -------------------- */
   // Ajustable: si querés más estricto, bajalo (ej 7-10 días). Si querés más flexible, subilo (ej 30-45).
@@ -400,6 +506,49 @@ const App: React.FC = () => {
       console.error("No se pudo corregir el grupo persistido invalido:", error);
     } finally {
       sanitizingTripIdsRef.current.delete(trip.id);
+    }
+  };
+
+  const correctLikelyFutureYearTrip = async (
+    trip: Trip,
+    correction: { departureFlight: Flight | null; returnFlight: Flight | null; purchaseDate?: string }
+  ) => {
+    if (!user || !db || correctingYearTripIdsRef.current.has(trip.id)) return;
+
+    correctingYearTripIdsRef.current.add(trip.id);
+
+    try {
+      console.warn("Corrigiendo año probablemente mal inferido en Firestore", {
+        tripId: trip.id,
+        departure: correction.departureFlight?.departureDateTime,
+        return: correction.returnFlight?.departureDateTime,
+      });
+
+      await updateDoc(doc(db, "users", user.uid, "trips", trip.id), {
+        departureFlight: correction.departureFlight,
+        returnFlight: correction.returnFlight,
+        purchaseDate: correction.purchaseDate || trip.purchaseDate || null,
+      });
+    } catch (error) {
+      console.error("No se pudo corregir el año del vuelo persistido:", error);
+    } finally {
+      correctingYearTripIdsRef.current.delete(trip.id);
+    }
+  };
+
+  const deleteDuplicatePersistedTrip = async (tripId: string) => {
+    if (!user || !db || deletingDuplicateTripIdsRef.current.has(tripId)) return;
+
+    deletingDuplicateTripIdsRef.current.add(tripId);
+
+    try {
+      console.warn("Eliminando tramo duplicado persistido", { tripId });
+      await deleteDoc(doc(db, "users", user.uid, "trips", tripId));
+      await deleteBoardingPassesForTrip(user.uid, tripId);
+    } catch (error) {
+      console.error("No se pudo eliminar el tramo duplicado:", error);
+    } finally {
+      deletingDuplicateTripIdsRef.current.delete(tripId);
     }
   };
 
@@ -462,6 +611,33 @@ const App: React.FC = () => {
         const list: Trip[] = [];
         snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
         setTrips(list);
+
+        const yearCorrections = list
+          .map((trip) => ({ trip, correction: getLikelyYearCorrection(trip) }))
+          .filter(
+            (entry): entry is {
+              trip: Trip;
+              correction: { departureFlight: Flight | null; returnFlight: Flight | null; purchaseDate?: string };
+            } => !!entry.correction
+          );
+
+        if (yearCorrections.length > 0) {
+          for (const { trip, correction } of yearCorrections) {
+            void correctLikelyFutureYearTrip(trip, correction);
+          }
+          return;
+        }
+
+        const duplicateTripIds = getDuplicateOneWayTripIds(list).filter(
+          (tripId) => !deletingDuplicateTripIdsRef.current.has(tripId)
+        );
+
+        if (duplicateTripIds.length > 0) {
+          for (const tripId of duplicateTripIds) {
+            void deleteDuplicatePersistedTrip(tripId);
+          }
+          return;
+        }
 
         const invalidTrips = list
           .map((trip) => ({ trip, invalid: getInvalidRoundTripFlights(trip) }))

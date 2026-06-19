@@ -66,7 +66,46 @@ function isAerolineasEmail(emailText) {
   );
 }
 
-function parseSpanishFlightDate(text) {
+function extractReferenceDateFromEmail(text) {
+  if (typeof text !== "string") return null;
+
+  var patterns = [
+    /fecha\s+de\s+referencia\s+del\s+email\s*:?\s*(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/i,
+    /fecha\s+del\s+email\s*:?\s*(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/i,
+    /enviado\s*:?\s*(?:\w+,\s*)?(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/i,
+    /date\s*:?\s*(?:\w+,\s*)?(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/i,
+  ];
+
+  for (var i = 0; i < patterns.length; i++) {
+    var m = text.match(patterns[i]);
+    if (m) {
+      var day = Number(m[1]);
+      var month = Number(m[2]) - 1;
+      var year = Number(m[3]);
+      var d = new Date(year, month, day);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+  }
+
+  return null;
+}
+
+function inferYearForMonthDay(day, month, explicitYear, referenceDate) {
+  if (explicitYear) return Number(explicitYear);
+
+  var ref = referenceDate || new Date();
+  var refYear = ref.getFullYear();
+  var refMonth = ref.getMonth();
+  var flight = new Date(refYear, month, day);
+  var diffDays = Math.round((flight.getTime() - ref.getTime()) / (24 * 60 * 60 * 1000));
+
+  // Caso fuerte de cruce de año: correo de fin de año con vuelo cercano en enero/febrero.
+  if (diffDays < -180 && refMonth >= 10 && month <= 1) return refYear + 1;
+
+  return refYear;
+}
+
+function parseSpanishFlightDate(text, referenceDate) {
   var months = {
     enero: 0,
     febrero: 1,
@@ -91,14 +130,8 @@ function parseSpanishFlightDate(text) {
 
   var day = Number(m[1]);
   var month = months[m[2]];
-  var year = m[3] ? Number(m[3]) : new Date().getFullYear();
+  var year = inferYearForMonthDay(day, month, m[3], referenceDate);
   var d = new Date(year, month, day);
-
-  if (!m[3]) {
-    var today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (d < today) d = new Date(year + 1, month, day);
-  }
 
   return {
     year: d.getFullYear(),
@@ -164,6 +197,7 @@ function parseAirport(value) {
 
 function parseAerolineasArgentinasEmail(emailText) {
   if (!isAerolineasEmail(emailText)) return null;
+  var referenceDate = extractReferenceDateFromEmail(emailText);
 
   var bookingMatch = emailText.match(
     /c[oó]digo\s+de\s+reserva\s*:?\s*([A-Z0-9]{5,8})/i
@@ -190,7 +224,9 @@ function parseAerolineasArgentinasEmail(emailText) {
         ? flightMatches[i + 1].index
         : flightMatches[i].index + 2500;
     var block = emailText.slice(start, end);
-    var datePart = parseSpanishFlightDate(block) || parseSpanishFlightDate(emailText);
+    var datePart =
+      parseSpanishFlightDate(block, referenceDate) ||
+      parseSpanishFlightDate(emailText, referenceDate);
     var lines = block
       .split(/\r?\n/)
       .map(function (l) {
