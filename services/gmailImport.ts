@@ -94,13 +94,39 @@ function extractMessageText(payload: any): string {
 }
 
 async function gmailFetch<T>(accessToken: string, path: string): Promise<T> {
-  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/${path}`;
+  console.log("gmailRequest", {
+    url,
+    hasAccessToken: !!accessToken,
+    accessToken,
+  });
+
+  const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Gmail API error ${res.status}: ${text || res.statusText}`);
+    let payload: unknown = text;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = text;
+    }
+
+    console.log("gmailError", {
+      status: res.status,
+      statusText: res.statusText,
+      payload,
+      url,
+    });
+
+    const reason =
+      typeof payload === "object" && payload && "error" in payload
+        ? JSON.stringify((payload as any).error)
+        : text || res.statusText;
+
+    throw new Error(`Gmail API error ${res.status} ${res.statusText}: ${reason}`);
   }
 
   return res.json() as Promise<T>;

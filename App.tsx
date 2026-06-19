@@ -509,11 +509,34 @@ const App: React.FC = () => {
     const credential = GoogleAuthProvider.credentialFromResult(result);
     const accessToken = credential?.accessToken;
 
+    console.log("GoogleAuthProvider scopes configurados", [
+      "https://www.googleapis.com/auth/gmail.readonly",
+    ]);
+    console.log("credential", credential);
+    console.log("accessToken", accessToken);
+
     if (!accessToken) {
       throw new Error("No se pudo obtener permiso de lectura de Gmail.");
     }
 
     return accessToken;
+  };
+
+  const logGrantedScopes = async (accessToken: string) => {
+    try {
+      const tokenInfoUrl = `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${encodeURIComponent(
+        accessToken
+      )}`;
+      const res = await fetch(tokenInfoUrl);
+      const payload = await res.json().catch(() => null);
+      console.log("grantedScopes", {
+        status: res.status,
+        payload,
+        scope: payload?.scope,
+      });
+    } catch (error) {
+      console.log("grantedScopes", { error });
+    }
   };
 
   const splitInvalidPersistedTrip = async (
@@ -1035,10 +1058,26 @@ const App: React.FC = () => {
 
     try {
       const accessToken = await getGmailReadonlyAccessToken();
-      const settingsSnap = await getDoc(settingsRef);
-      const settings = (settingsSnap.exists()
-        ? settingsSnap.data()
-        : {}) as GmailImportSettings;
+      await logGrantedScopes(accessToken);
+
+      let settings: GmailImportSettings = {};
+      try {
+        const settingsSnap = await getDoc(settingsRef);
+        settings = (settingsSnap.exists()
+          ? settingsSnap.data()
+          : {}) as GmailImportSettings;
+        console.log("gmailImportSettings", {
+          source: "firestore",
+          exists: settingsSnap.exists(),
+          processedCount: settings.processedMessageIds?.length || 0,
+        });
+      } catch (error) {
+        console.log("gmailImportSettingsError", error);
+        console.log("gmailError", {
+          stage: "firestore-settings-read",
+          error,
+        });
+      }
 
       const result = await importTripsFromGmail(accessToken, settings);
 
@@ -1051,16 +1090,24 @@ const App: React.FC = () => {
           ? `${result.trips.length} vuelos importados`
           : "Sin vuelos nuevos";
 
-      await setDoc(
-        settingsRef,
-        {
-          lastScanAt: new Date().toISOString(),
-          processedMessageIds: result.processedMessageIds,
-          lastResult: message,
-          lastError: null,
-        },
-        { merge: true }
-      );
+      try {
+        await setDoc(
+          settingsRef,
+          {
+            lastScanAt: new Date().toISOString(),
+            processedMessageIds: result.processedMessageIds,
+            lastResult: message,
+            lastError: null,
+          },
+          { merge: true }
+        );
+      } catch (error) {
+        console.log("gmailImportSettingsError", error);
+        console.log("gmailError", {
+          stage: "firestore-settings-write",
+          error,
+        });
+      }
 
       setGmailImportState({
         loading: false,
@@ -1068,7 +1115,15 @@ const App: React.FC = () => {
         error: null,
       });
     } catch (error: any) {
-      const message = error?.message || "No se pudo importar desde Gmail.";
+      const rawMessage = error?.message || "No se pudo importar desde Gmail.";
+      const message = rawMessage.includes("Missing or insufficient permissions")
+        ? `Permisos insuficientes: ${rawMessage}. Revisar consola para confirmar si viene de Gmail API o Firestore.`
+        : rawMessage;
+      console.log("gmailError", {
+        stage: "gmail-import",
+        error,
+        message,
+      });
 
       await setDoc(
         settingsRef,
