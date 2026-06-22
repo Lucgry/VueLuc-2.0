@@ -276,6 +276,7 @@ function parseAerolineasArgentinasEmail(emailText) {
         arrivalDateTime: arrivalDateTime,
         cost: null,
         paymentMethod: null,
+        reservationCode: bookingReference,
         bookingReference: bookingReference,
       });
     }
@@ -497,6 +498,7 @@ function buildSystemInstruction(hasPdf) {
     '      \"arrivalDateTime\": \"YYYY-MM-DDTHH:mm:ss\",\n' +
     '      \"cost\": number,\n' +
     '      \"paymentMethod\": \"string\",\n' +
+    '      \"reservationCode\": \"string\",\n' +
     '      \"bookingReference\": \"string\"\n' +
     "    }\n" +
     "  ],\n" +
@@ -504,7 +506,8 @@ function buildSystemInstruction(hasPdf) {
     "}\n\n" +
     "REGLAS:\n" +
     "- NO inventes datos.\n" +
-    "- bookingReference es obligatorio (ej: QDVT6H, OGPLLZ).\n" +
+    "- reservationCode / bookingReference es obligatorio si aparece (ej: QDVT6H, OGPLLZ).\n" +
+    "- Buscar variantes de reserva: Codigo de reserva, Codigo, Reserva, Booking code, Booking reference, PNR, Record locator, Localizador, N de reserva, Numero de reserva.\n" +
     "- Extraer TODOS los tramos como objetos en flights.\n" +
     "- Si hay dos tramos, devolver dos objetos en flights.\n" +
     "- Los meses/días pueden venir en español (ej: 'lunes, 22 diciembre').\n" +

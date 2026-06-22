@@ -1,6 +1,7 @@
 // services/geminiService.ts
 import type { Trip, Flight } from "../types";
 import { groupFlightsIntoTrips } from "./groupFlights.ts";
+import { getFlightReservationCode } from "./reservation.ts";
 
 type GeminiResponse = {
   flights: Flight[];
@@ -38,12 +39,18 @@ const normalizeFlights = (
   const invalid: Flight[] = [];
 
   for (const f of flights) {
-    const depOk = !!f?.departureDateTime && isValidDate(f.departureDateTime);
-    const oriOk = !!f?.departureAirportCode;
-    const dstOk = !!f?.arrivalAirportCode;
+    const reservationCode = getFlightReservationCode(f);
+    const normalizedFlight: Flight = {
+      ...f,
+      reservationCode,
+      bookingReference: reservationCode,
+    };
+    const depOk = !!normalizedFlight?.departureDateTime && isValidDate(normalizedFlight.departureDateTime);
+    const oriOk = !!normalizedFlight?.departureAirportCode;
+    const dstOk = !!normalizedFlight?.arrivalAirportCode;
 
-    if (depOk && oriOk && dstOk) valid.push(f);
-    else invalid.push(f);
+    if (depOk && oriOk && dstOk) valid.push(normalizedFlight);
+    else invalid.push(normalizedFlight);
   }
 
   return { valid, invalid };

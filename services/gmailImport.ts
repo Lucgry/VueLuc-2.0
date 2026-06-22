@@ -1,6 +1,7 @@
 import type { Trip, Flight } from "../types";
 import { parseFlightEmail } from "./geminiService.ts";
 import { normalizePaymentMethod, shouldReplacePaymentMethod } from "./payment.ts";
+import { getFlightReservationCode } from "./reservation.ts";
 
 export interface GmailImportSettings {
   lastScanAt?: string | null;
@@ -274,11 +275,15 @@ function withGmailMetadata(
     )
       ? normalizePaymentMethod(detectedPaymentRaw).label
       : normalizePaymentMethod(flight.paymentMethod).label;
+    const reservationCode = getFlightReservationCode(flight);
 
     return {
       ...flight,
       paymentMethod,
       paymentSource: normalizePaymentMethod(paymentMethod).detected ? "gmail" : null,
+      reservationCode,
+      bookingReference: reservationCode,
+      reservationSource: reservationCode ? "gmail" : null,
       source: "gmail",
       gmailMessageId: message.id,
       gmailSubject: message.subject,
@@ -409,6 +414,11 @@ export async function importTripsFromGmail(
               subject: message.subject,
               detectedPaymentRaw: flight.paymentMethod,
               normalizedPaymentMethod: normalizePaymentMethod(flight.paymentMethod),
+              detectedReservationCode: getFlightReservationCode(flight),
+              flightNumber: flight.flightNumber,
+              date: flight.departureDateTime,
+              origin: flight.departureAirportCode,
+              destination: flight.arrivalAirportCode,
               detectedAmount: flight.cost,
               source: flight.source || "gmail/body",
               gmailMessageId: message.id,

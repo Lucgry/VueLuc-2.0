@@ -3,6 +3,7 @@ import type { Trip, Flight } from '../types';
 import { PencilSquareIcon } from './icons/PencilSquareIcon';
 import { Spinner } from './Spinner';
 import { PAYMENT_METHOD_OPTIONS, normalizePaymentMethod } from '../services/payment';
+import { normalizeReservationCode } from '../services/reservation';
 
 interface QuickAddModalProps {
   onClose: () => void;
@@ -125,6 +126,8 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
             const arrDateTime = new Date(`${data.arrDate}T00:00:00.000Z`);
             arrDateTime.setUTCHours(arrHours, arrMinutes, 0, 0);
 
+            const reservationCode = normalizeReservationCode(data.bookingReference);
+
             return {
                 flightNumber: data.flightNum.toUpperCase().trim(),
                 airline: data.airline.trim(),
@@ -138,7 +141,10 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
                 paymentMethod: normalizePaymentMethod(data.paymentMethod).label,
                 paymentSource: 'manual',
                 paymentUpdatedAt: new Date().toISOString(),
-                bookingReference: data.bookingReference.toUpperCase().trim() || null,
+                reservationCode,
+                reservationSource: 'manual',
+                reservationUpdatedAt: new Date().toISOString(),
+                bookingReference: reservationCode,
             };
         };
         

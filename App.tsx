@@ -32,6 +32,11 @@ import {
   normalizePaymentMethod,
   shouldReplaceFlightPayment,
 } from "./services/payment";
+import {
+  getFlightReservationCode,
+  mergeReservationCode,
+  normalizeReservationCode,
+} from "./services/reservation";
 
 // ✅ normalización ida/vuelta (tu lógica)
 import {
@@ -178,6 +183,8 @@ const flightMatchesIdentity = (candidate: Flight, existing: Flight): boolean => 
   const existingOrigin = normalizeFlightIdentityField(existing.departureAirportCode);
   const candidateDestination = normalizeFlightIdentityField(candidate.arrivalAirportCode);
   const existingDestination = normalizeFlightIdentityField(existing.arrivalAirportCode);
+  const candidateReservation = getFlightReservationCode(candidate);
+  const existingReservation = getFlightReservationCode(existing);
 
   if (
     !candidateFlightNumber ||
@@ -189,6 +196,10 @@ const flightMatchesIdentity = (candidate: Flight, existing: Flight): boolean => 
     !existingOrigin ||
     !existingDestination
   ) {
+    return false;
+  }
+
+  if (candidateReservation && existingReservation && candidateReservation !== existingReservation) {
     return false;
   }
 
@@ -209,9 +220,12 @@ const flightAlreadyExists = (candidate: Flight, existingTrips: Trip[]): boolean 
 
 const normalizeFlightPayment = (flight: Flight | null): Flight | null => {
   if (!flight) return null;
+  const reservationCode = getFlightReservationCode(flight);
   return {
     ...flight,
     paymentMethod: normalizePaymentMethod(flight.paymentMethod).label,
+    reservationCode,
+    bookingReference: reservationCode,
   };
 };
 
@@ -258,6 +272,23 @@ const mergeFlightFinancialData = (existing: Flight, candidate: Flight): Flight =
       next.paymentSource === "manual"
         ? normalizePaymentMethod(next.paymentMethod).label
         : chooseBetterPaymentMethod(next.paymentMethod, candidate.paymentMethod);
+  }
+
+  const mergedReservationCode = mergeReservationCode(
+    getFlightReservationCode(next),
+    getFlightReservationCode(candidate),
+    {
+      flightNumber: existing.flightNumber,
+      departureDateTime: existing.departureDateTime,
+    }
+  );
+  if (mergedReservationCode && mergedReservationCode !== getFlightReservationCode(next)) {
+    next.reservationCode = mergedReservationCode;
+    next.bookingReference = mergedReservationCode;
+    next.reservationSource = candidate.reservationSource ?? candidate.source ?? null;
+  } else if (mergedReservationCode) {
+    next.reservationCode = mergedReservationCode;
+    next.bookingReference = mergedReservationCode;
   }
 
   return next;
@@ -957,7 +988,8 @@ const App: React.FC = () => {
         const changed =
           mergedFlight.cost !== entry.existing.cost ||
           mergedFlight.paymentMethod !== entry.existing.paymentMethod ||
-          mergedFlight.paymentSource !== entry.existing.paymentSource;
+          mergedFlight.paymentSource !== entry.existing.paymentSource ||
+          getFlightReservationCode(mergedFlight) !== getFlightReservationCode(entry.existing);
 
         if (!changed) return false;
 
@@ -967,6 +999,7 @@ const App: React.FC = () => {
           flightNumber: candidate.flightNumber,
           detectedPaymentRaw: candidate.paymentMethod,
           normalizedPaymentMethod: normalizePaymentMethod(candidate.paymentMethod),
+          detectedReservationCode: getFlightReservationCode(candidate),
           detectedAmount: candidate.cost,
           source: candidate.source || "email/body",
         });
@@ -1014,6 +1047,48 @@ const App: React.FC = () => {
       paymentMethod: normalizedPayment,
       paymentSource: "manual",
       paymentUpdatedAt: nowIso,
+    };
+
+    await updateDoc(doc(db, "users", user.uid, "trips", trip.id), {
+      [field]: updatedFlight,
+      updatedAt: nowIso,
+    });
+  };
+
+  const onUpdateTripReservation = async (
+    trip: Trip,
+    leg: "ida" | "vuelta",
+    reservationCode: string
+  ) => {
+    if (!user || !db) return;
+
+    const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
+    const flight = leg === "ida" ? idaFlight : vueltaFlight;
+    if (!flight) return;
+
+    const field =
+      trip.departureFlight === flight
+        ? "departureFlight"
+        : trip.returnFlight === flight
+        ? "returnFlight"
+        : null;
+
+    if (!field) {
+      console.warn("No se pudo resolver el campo del tramo para editar reserva", {
+        tripId: trip.id,
+        leg,
+      });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const normalizedCode = normalizeReservationCode(reservationCode);
+    const updatedFlight: Flight = {
+      ...flight,
+      reservationCode: normalizedCode,
+      bookingReference: normalizedCode,
+      reservationSource: "manual",
+      reservationUpdatedAt: nowIso,
     };
 
     await updateDoc(doc(db, "users", user.uid, "trips", trip.id), {
@@ -1522,6 +1597,7 @@ const App: React.FC = () => {
               onStartGrouping={onStartGrouping}
               onConfirmGrouping={onConfirmGrouping}
               onUpdatePayment={onUpdateTripPayment}
+              onUpdateReservation={onUpdateTripReservation}
             />
           </>
         )}

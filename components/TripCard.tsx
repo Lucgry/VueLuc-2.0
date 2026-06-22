@@ -19,6 +19,7 @@ import {
   formatPaymentMethod as formatNormalizedPaymentMethod,
   normalizePaymentMethod,
 } from "../services/payment";
+import { getFlightReservationCode, normalizeReservationCode } from "../services/reservation";
 
 // ✅ NORMALIZA ida/vuelta por dirección real
 import { isValidRoundTripPair, normalizeTripFlights } from "../services/tripLeg";
@@ -110,7 +111,7 @@ const generateGoogleCalendarUrl = (flight: Flight): string | null => {
 
   let details = `Vuelo: ${flight.flightNumber || "N/A"}\n`;
   details += `Aerolínea: ${flight.airline || "N/A"}\n`;
-  details += `Reserva: ${flight.bookingReference || "N/A"}\n`;
+  details += `Reserva: ${getFlightReservationCode(flight) || "No detectado"}\n`;
   details += `Salida: ${flight.departureCity} (${flight.departureAirportCode})\n`;
   details += `Llegada: ${flight.arrivalCity} (${flight.arrivalAirportCode})`;
 
@@ -127,6 +128,7 @@ const FlightInfo: React.FC<{ flight: Flight; type: "Ida" | "Vuelta" }> = ({
 }) => {
   if (!flight) return null;
   const calendarUrl = generateGoogleCalendarUrl(flight);
+  const reservationCode = getFlightReservationCode(flight);
 
   return (
     <div className="flex-1">
@@ -135,9 +137,9 @@ const FlightInfo: React.FC<{ flight: Flight; type: "Ida" | "Vuelta" }> = ({
           <TicketIcon className="h-5 w-5" />
           <span>{type}</span>
         </div>
-        {flight.bookingReference && (
+        {reservationCode && (
           <div className="font-mono bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 px-2 py-0.5 rounded-md text-xs font-semibold">
-            {flight.bookingReference}
+            {reservationCode}
           </div>
         )}
       </div>
@@ -208,6 +210,7 @@ interface TripCardProps {
   onStartGrouping: (trip: Trip) => void;
   onConfirmGrouping: (targetTrip: Trip) => void;
   onUpdatePayment: (trip: Trip, leg: "ida" | "vuelta", paymentMethod: string) => Promise<void>;
+  onUpdateReservation: (trip: Trip, leg: "ida" | "vuelta", reservationCode: string) => Promise<void>;
 }
 
 type DeletionState = "idle" | "confirming" | "deleting";
@@ -223,6 +226,7 @@ const TripCard: React.FC<TripCardProps> = ({
   onStartGrouping,
   onConfirmGrouping,
   onUpdatePayment,
+  onUpdateReservation,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -249,6 +253,9 @@ const TripCard: React.FC<TripCardProps> = ({
   const [editingPaymentLeg, setEditingPaymentLeg] = useState<"ida" | "vuelta" | null>(null);
   const [paymentDraft, setPaymentDraft] = useState("");
   const [savingPaymentLeg, setSavingPaymentLeg] = useState<"ida" | "vuelta" | null>(null);
+  const [editingReservationLeg, setEditingReservationLeg] = useState<"ida" | "vuelta" | null>(null);
+  const [reservationDraft, setReservationDraft] = useState("");
+  const [savingReservationLeg, setSavingReservationLeg] = useState<"ida" | "vuelta" | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const flightTypeToUpload = useRef<"ida" | "vuelta" | null>(null);
 
@@ -477,7 +484,7 @@ const TripCard: React.FC<TripCardProps> = ({
     let text = `✈️ Viaje a ${destinationCity} (VueLuc 2.0)\n\n`;
 
     if (ida) {
-      text += `🛫 IDA (Reserva: ${ida.bookingReference || "N/A"}):\n`;
+      text += `🛫 IDA (Reserva: ${getFlightReservationCode(ida) || "No detectado"}):\n`;
       text += `${ida.airline || ""} (Vuelo ${ida.flightNumber || ""})\n`;
       text += `🗓️ ${formatDate(ida.departureDateTime ?? null)}\n`;
       text += `Sale ${ida.departureCity} (${ida.departureAirportCode}) a las ${formatTime(
@@ -489,7 +496,7 @@ const TripCard: React.FC<TripCardProps> = ({
     }
 
     if (vuelta) {
-      text += `🛬 VUELTA (Reserva: ${vuelta.bookingReference || "N/A"}):\n`;
+      text += `🛬 VUELTA (Reserva: ${getFlightReservationCode(vuelta) || "No detectado"}):\n`;
       text += `${vuelta.airline || ""} (Vuelo ${vuelta.flightNumber || ""})\n`;
       text += `🗓️ ${formatDate(vuelta.departureDateTime ?? null)}\n`;
       text += `Sale ${vuelta.departureCity} (${vuelta.departureAirportCode}) a las ${formatTime(
@@ -668,6 +675,112 @@ const TripCard: React.FC<TripCardProps> = ({
     );
   };
 
+  const getReservationLabel = (flight?: Flight | null) =>
+    getFlightReservationCode(flight) || "No detectado";
+
+  const idaReservation = getFlightReservationCode(idaFlight);
+  const vueltaReservation = getFlightReservationCode(vueltaFlight);
+  const reservationSummary =
+    idaFlight && vueltaFlight && idaReservation && idaReservation === vueltaReservation
+      ? `Código de reserva: ${idaReservation}`
+      : idaFlight && !vueltaFlight
+      ? `Código de reserva: ${getReservationLabel(idaFlight)}`
+      : vueltaFlight && !idaFlight
+      ? `Código de reserva: ${getReservationLabel(vueltaFlight)}`
+      : [
+          idaFlight ? `Código ida: ${getReservationLabel(idaFlight)}` : null,
+          vueltaFlight ? `Código vuelta: ${getReservationLabel(vueltaFlight)}` : null,
+        ].filter(Boolean).join(" · ");
+
+  const beginReservationEdit = (
+    e: React.MouseEvent,
+    leg: "ida" | "vuelta",
+    flight: Flight
+  ) => {
+    e.stopPropagation();
+    setEditingReservationLeg(leg);
+    setReservationDraft(getFlightReservationCode(flight) || "");
+  };
+
+  const cancelReservationEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingReservationLeg(null);
+    setReservationDraft("");
+  };
+
+  const saveReservationEdit = async (e: React.MouseEvent, leg: "ida" | "vuelta") => {
+    e.stopPropagation();
+    const normalized = normalizeReservationCode(reservationDraft);
+    if (!normalized) {
+      alert("Ingresá un código de reserva válido.");
+      return;
+    }
+
+    setSavingReservationLeg(leg);
+    try {
+      await onUpdateReservation(trip, leg, normalized);
+      setEditingReservationLeg(null);
+      setReservationDraft("");
+    } catch (error) {
+      console.error("Error actualizando codigo de reserva:", error);
+      alert("No se pudo guardar el código de reserva.");
+    } finally {
+      setSavingReservationLeg(null);
+    }
+  };
+
+  const ReservationEditor: React.FC<{ leg: "ida" | "vuelta"; flight: Flight }> = ({
+    leg,
+    flight,
+  }) => {
+    const isEditing = editingReservationLeg === leg;
+    const isSaving = savingReservationLeg === leg;
+
+    if (isEditing) {
+      return (
+        <div className="mt-2 flex flex-col sm:flex-row gap-2 sm:items-center">
+          <input
+            type="text"
+            value={reservationDraft}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => setReservationDraft(e.target.value.toUpperCase())}
+            className="w-full sm:w-40 px-2 py-1.5 rounded-md bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-sm font-mono uppercase"
+            placeholder="ABC123"
+            disabled={isSaving}
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={(e) => saveReservationEdit(e, leg)}
+              className="px-3 py-1.5 rounded-md text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
+              disabled={isSaving}
+            >
+              {isSaving ? "Guardando..." : "Guardar"}
+            </button>
+            <button
+              type="button"
+              onClick={cancelReservationEdit}
+              className="px-3 py-1.5 rounded-md text-sm font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
+              disabled={isSaving}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={(e) => beginReservationEdit(e, leg, flight)}
+        className="ml-2 inline-flex px-2 py-1 rounded-md text-xs font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600"
+      >
+        {getFlightReservationCode(flight) ? "Editar código" : "Agregar código"}
+      </button>
+    );
+  };
+
   let cardClasses = `relative bg-white dark:bg-slate-800 backdrop-blur-md rounded-xl transition-all duration-300 border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden ${
     isPast ? "opacity-70 hover:opacity-100" : ""
   } ${isNext ? "next-trip-glow" : ""}`;
@@ -770,6 +883,12 @@ const TripCard: React.FC<TripCardProps> = ({
                 <strong>Forma de pago:</strong> {paymentSummary}
               </div>
             )}
+
+            {reservationSummary && (
+              <div className="text-xs text-slate-600 dark:text-slate-400">
+                <strong>{reservationSummary}</strong>
+              </div>
+            )}
           </div>
         </div>
 
@@ -822,6 +941,10 @@ const TripCard: React.FC<TripCardProps> = ({
                     {" · "}
                     <strong>Forma de pago:</strong> {getPaymentLabel(idaFlight)}
                     <PaymentEditor leg="ida" flight={idaFlight} />
+                    <div className="mt-1">
+                      <strong>Código de reserva:</strong> {getReservationLabel(idaFlight)}
+                      <ReservationEditor leg="ida" flight={idaFlight} />
+                    </div>
                   </div>
                 )}
                 {vueltaFlight && (
@@ -831,6 +954,10 @@ const TripCard: React.FC<TripCardProps> = ({
                     {" · "}
                     <strong>Forma de pago:</strong> {getPaymentLabel(vueltaFlight)}
                     <PaymentEditor leg="vuelta" flight={vueltaFlight} />
+                    <div className="mt-1">
+                      <strong>Código de reserva:</strong> {getReservationLabel(vueltaFlight)}
+                      <ReservationEditor leg="vuelta" flight={vueltaFlight} />
+                    </div>
                   </div>
                 )}
               </div>

@@ -13,6 +13,9 @@ export interface Flight {
   paymentMethod: string | null;
   paymentSource?: "gmail" | "email" | "pdf" | "manual" | null;
   paymentUpdatedAt?: string | null;
+  reservationCode?: string | null;
+  reservationSource?: "gmail" | "email" | "pdf" | "manual" | null;
+  reservationUpdatedAt?: string | null;
   bookingReference: string | null;
   passengerName?: string | null;
   source?: "gmail" | "manual" | "email" | null;
