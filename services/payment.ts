@@ -37,7 +37,7 @@ export const PAYMENT_METHOD_OPTIONS = [
   "Débito Macro",
   "Crédito Ciudad",
   "Crédito Macro",
-  "Joy",
+  "Débito Nación",
 ];
 
 function normalizeText(value?: string | null): string {
