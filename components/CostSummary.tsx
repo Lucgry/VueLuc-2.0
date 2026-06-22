@@ -5,6 +5,7 @@ import { CalculatorIcon } from "./icons/CalculatorIcon";
 import { CurrencyIcon } from "./icons/CurrencyIcon";
 import { ChevronDownIcon } from "./icons/ChevronDownIcon";
 import { AirlineLogo } from "./AirlineLogo";
+import { normalizePaymentMethod } from "../services/payment";
 
 interface CostSummaryProps {
   trips: Trip[];
@@ -81,7 +82,10 @@ const PAYMENT_ORDER = [
   "Débito Nación",
   "Crédito Macro",
   "Crédito Ciudad",
-  "Crédito Yoy",
+  "Joy",
+  "Mercado Pago",
+  "Ciudad — tipo no detectado",
+  "Macro — tipo no detectado",
 ] as const;
 
 type PaymentLabel = (typeof PAYMENT_ORDER)[number];
@@ -101,7 +105,7 @@ const formatPaymentMethod = (paymentMethod: string | null): PaymentLabel | null 
   if (pm.includes("7005")) return "Débito Nación";
   if (pm.includes("5603")) return "Crédito Macro";
   if (pm.includes("8769")) return "Crédito Ciudad";
-  if (pm.includes("8059")) return "Crédito Yoy";
+  if (pm.includes("8059")) return "Joy";
 
   // Si ya vino normalizado exactamente como uno de los 6
   if ((PAYMENT_ORDER as readonly string[]).includes(pm)) return pm as PaymentLabel;
@@ -174,7 +178,10 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
       "Débito Nación": 0,
       "Crédito Macro": 0,
       "Crédito Ciudad": 0,
-      "Crédito Yoy": 0,
+      "Joy": 0,
+      "Mercado Pago": 0,
+      "Ciudad — tipo no detectado": 0,
+      "Macro — tipo no detectado": 0,
     };
 
     for (const trip of tripsForPurchaseYear) {
@@ -182,7 +189,10 @@ const CostSummary: React.FC<CostSummaryProps> = ({ trips }) => {
         if (!flight) continue;
         if (!flight.cost || flight.cost <= 0) continue;
 
-        const label = formatPaymentMethod(flight.paymentMethod || null);
+        const normalizedLabel = normalizePaymentMethod(flight.paymentMethod || null).label;
+        const label = (PAYMENT_ORDER as readonly string[]).includes(normalizedLabel)
+          ? (normalizedLabel as PaymentLabel)
+          : null;
         if (!label) continue;
 
         costsByMethod[label] += flight.cost;

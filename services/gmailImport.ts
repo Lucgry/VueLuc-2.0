@@ -1,5 +1,6 @@
 import type { Trip, Flight } from "../types";
 import { parseFlightEmail } from "./geminiService";
+import { normalizePaymentMethod } from "./payment";
 
 export interface GmailImportSettings {
   lastScanAt?: string | null;
@@ -303,7 +304,21 @@ export async function importTripsFromGmail(
         discarded += 1;
       } else {
         parsed += 1;
-        trips.push(...parsedTrips.map((trip) => withGmailMetadata(trip, message)));
+        const tripsWithMetadata = parsedTrips.map((trip) => withGmailMetadata(trip, message));
+        for (const trip of tripsWithMetadata) {
+          for (const flight of [trip.departureFlight, trip.returnFlight]) {
+            if (!flight) continue;
+            console.info("[gmailImport] payment detection", {
+              subject: message.subject,
+              detectedPaymentRaw: flight.paymentMethod,
+              normalizedPaymentMethod: normalizePaymentMethod(flight.paymentMethod),
+              detectedAmount: flight.cost,
+              source: flight.source || "gmail/body",
+              gmailMessageId: message.id,
+            });
+          }
+        }
+        trips.push(...tripsWithMetadata);
       }
 
       newlyProcessedIds.push(id);

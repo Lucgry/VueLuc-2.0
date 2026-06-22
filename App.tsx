@@ -27,6 +27,11 @@ import {
   importTripsFromGmail,
   type GmailImportSettings,
 } from "./services/gmailImport";
+import {
+  chooseBetterPaymentMethod,
+  normalizePaymentMethod,
+  shouldReplacePaymentMethod,
+} from "./services/payment";
 
 // ✅ normalización ida/vuelta (tu lógica)
 import {
@@ -201,6 +206,51 @@ const flightAlreadyExists = (candidate: Flight, existingTrips: Trip[]): boolean 
       flightMatchesIdentity(candidate, existingFlight)
     )
   );
+
+const normalizeFlightPayment = (flight: Flight | null): Flight | null => {
+  if (!flight) return null;
+  return {
+    ...flight,
+    paymentMethod: normalizePaymentMethod(flight.paymentMethod).label,
+  };
+};
+
+const normalizeTripPayment = <T extends Omit<Trip, "id" | "createdAt">>(trip: T): T => ({
+  ...trip,
+  departureFlight: normalizeFlightPayment(trip.departureFlight),
+  returnFlight: normalizeFlightPayment(trip.returnFlight),
+});
+
+const mergeFlightFinancialData = (existing: Flight, candidate: Flight): Flight => {
+  const next: Flight = { ...existing };
+
+  if ((next.cost == null || next.cost <= 0) && candidate.cost != null && candidate.cost > 0) {
+    next.cost = candidate.cost;
+  }
+
+  if (shouldReplacePaymentMethod(next.paymentMethod, candidate.paymentMethod)) {
+    next.paymentMethod = chooseBetterPaymentMethod(next.paymentMethod, candidate.paymentMethod);
+  } else {
+    const currentPayment = normalizePaymentMethod(next.paymentMethod);
+    const candidatePayment = normalizePaymentMethod(candidate.paymentMethod);
+    if (
+      currentPayment.detected &&
+      candidatePayment.detected &&
+      currentPayment.id !== candidatePayment.id &&
+      candidatePayment.specificity >= currentPayment.specificity
+    ) {
+      console.warn("Conflicto de forma de pago; se conserva la existente", {
+        existing: currentPayment,
+        candidate: candidatePayment,
+        flightNumber: existing.flightNumber,
+        departureDateTime: existing.departureDateTime,
+      });
+    }
+    next.paymentMethod = chooseBetterPaymentMethod(next.paymentMethod, candidate.paymentMethod);
+  }
+
+  return next;
+};
 
 const getInvalidRoundTripFlights = (
   trip: Trip
@@ -877,6 +927,48 @@ const App: React.FC = () => {
     }
   };
 
+  const updateDuplicateFlightFinancialData = async (candidate: Flight) => {
+    if (!user || !db) return false;
+
+    for (const trip of trips) {
+      const entries: Array<{
+        field: "departureFlight" | "returnFlight";
+        existing: Flight | null;
+      }> = [
+        { field: "departureFlight", existing: trip.departureFlight },
+        { field: "returnFlight", existing: trip.returnFlight },
+      ];
+
+      for (const entry of entries) {
+        if (!entry.existing || !flightMatchesIdentity(candidate, entry.existing)) continue;
+
+        const mergedFlight = mergeFlightFinancialData(entry.existing, candidate);
+        const changed =
+          mergedFlight.cost !== entry.existing.cost ||
+          mergedFlight.paymentMethod !== entry.existing.paymentMethod;
+
+        if (!changed) return false;
+
+        console.info("Actualizando datos financieros de vuelo duplicado", {
+          tripId: trip.id,
+          field: entry.field,
+          flightNumber: candidate.flightNumber,
+          detectedPaymentRaw: candidate.paymentMethod,
+          normalizedPaymentMethod: normalizePaymentMethod(candidate.paymentMethod),
+          detectedAmount: candidate.cost,
+          source: candidate.source || "email/body",
+        });
+
+        await updateDoc(doc(db, "users", user.uid, "trips", trip.id), {
+          [entry.field]: mergedFlight,
+        });
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   /**
    * Agregar viaje:
    * - Primero intentamos auto-merge SOLO en el momento de alta.
@@ -886,6 +978,7 @@ const App: React.FC = () => {
     if (!user || !db) return;
 
     const nowIso = new Date().toISOString();
+    const normalizedTripData = normalizeTripPayment(tripData);
 
     // Evitar doble ejecución accidental (doble click, etc.)
     if (processingRef.current) return;
@@ -893,16 +986,23 @@ const App: React.FC = () => {
 
     try {
       const duplicateDeparture =
-        !!tripData.departureFlight &&
-        flightAlreadyExists(tripData.departureFlight, trips);
+        !!normalizedTripData.departureFlight &&
+        flightAlreadyExists(normalizedTripData.departureFlight, trips);
       const duplicateReturn =
-        !!tripData.returnFlight &&
-        flightAlreadyExists(tripData.returnFlight, trips);
+        !!normalizedTripData.returnFlight &&
+        flightAlreadyExists(normalizedTripData.returnFlight, trips);
+
+      if (duplicateDeparture && normalizedTripData.departureFlight) {
+        await updateDuplicateFlightFinancialData(normalizedTripData.departureFlight);
+      }
+      if (duplicateReturn && normalizedTripData.returnFlight) {
+        await updateDuplicateFlightFinancialData(normalizedTripData.returnFlight);
+      }
 
       const tripToSave: Omit<Trip, "id" | "createdAt"> = {
-        ...tripData,
-        departureFlight: duplicateDeparture ? null : tripData.departureFlight ?? null,
-        returnFlight: duplicateReturn ? null : tripData.returnFlight ?? null,
+        ...normalizedTripData,
+        departureFlight: duplicateDeparture ? null : normalizedTripData.departureFlight ?? null,
+        returnFlight: duplicateReturn ? null : normalizedTripData.returnFlight ?? null,
       };
 
       if (!tripToSave.departureFlight && !tripToSave.returnFlight) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { Trip, Flight } from '../types';
 import { PencilSquareIcon } from './icons/PencilSquareIcon';
 import { Spinner } from './Spinner';
+import { normalizePaymentMethod } from '../services/payment';
 
 interface QuickAddModalProps {
   onClose: () => void;
@@ -56,7 +57,18 @@ const initialVueltaData: FlightData = {
     cost: '', paymentMethod: 'Débito Macro'
 };
 
-const paymentOptions = ['Débito Macro', 'Débito Ciudad', 'Crédito Macro', 'Crédito Ciudad', 'Crédito Yoy', 'Débito Nación'];
+const paymentOptions = [
+    'Débito Macro',
+    'Débito Ciudad',
+    'Crédito Macro',
+    'Crédito Ciudad',
+    'Débito Nación',
+    'Joy',
+    'Mercado Pago',
+    'Ciudad — tipo no detectado',
+    'Macro — tipo no detectado',
+    'No detectado',
+];
 const inputClasses = "w-full p-2 border-none rounded-md bg-slate-100 dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 transition shadow-neumo-light-in dark:shadow-neumo-dark-in";
 
 const FlightFieldSet: React.FC<{
@@ -135,7 +147,7 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
                 departureDateTime: depDateTime.toISOString(),
                 arrivalDateTime: arrDateTime.toISOString(),
                 cost: data.cost ? parseFloat(data.cost) : null,
-                paymentMethod: data.paymentMethod,
+                paymentMethod: normalizePaymentMethod(data.paymentMethod).label,
                 bookingReference: data.bookingReference.toUpperCase().trim() || null,
             };
         };

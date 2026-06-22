@@ -14,6 +14,7 @@ import { TrashIcon } from "./icons/TrashIcon";
 import { Spinner } from "./Spinner";
 import { LinkSlashIcon } from "./icons/LinkSlashIcon";
 import { CalendarPlusIcon } from "./icons/CalendarPlusIcon";
+import { formatPaymentMethod as formatNormalizedPaymentMethod } from "../services/payment";
 
 // ✅ NORMALIZA ida/vuelta por dirección real
 import { isValidRoundTripPair, normalizeTripFlights } from "../services/tripLeg";
@@ -704,15 +705,17 @@ const TripCard: React.FC<TripCardProps> = ({
                 {idaFlight && (
                   <p>
                     <strong>Costo Ida:</strong>{" "}
-                    {idaFlight.cost != null ? `$${idaFlight.cost.toLocaleString("es-AR")}` : "N/A"} (
-                    {formatPaymentMethod(idaFlight.paymentMethod ?? null)})
+                    {idaFlight.cost != null ? `$${idaFlight.cost.toLocaleString("es-AR")}` : "N/A"}
+                    {" · "}
+                    <strong>Forma de pago:</strong> {formatNormalizedPaymentMethod(idaFlight.paymentMethod ?? null)}
                   </p>
                 )}
                 {vueltaFlight && (
                   <p>
                     <strong>Costo Vuelta:</strong>{" "}
-                    {vueltaFlight.cost != null ? `$${vueltaFlight.cost.toLocaleString("es-AR")}` : "N/A"} (
-                    {formatPaymentMethod(vueltaFlight.paymentMethod ?? null)})
+                    {vueltaFlight.cost != null ? `$${vueltaFlight.cost.toLocaleString("es-AR")}` : "N/A"}
+                    {" · "}
+                    <strong>Forma de pago:</strong> {formatNormalizedPaymentMethod(vueltaFlight.paymentMethod ?? null)}
                   </p>
                 )}
               </div>

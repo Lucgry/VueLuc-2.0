@@ -351,7 +351,8 @@ function buildAerolineasPdfPaymentInstruction() {
     "- Extrae el costo total pagado si aparece.\n" +
     "- Extrae la forma de pago con el mayor detalle disponible.\n" +
     "- Si el PDF menciona tarjeta, marca, banco, billetera, ultimos digitos o medio de pago, conserva ese texto resumido.\n" +
-    "- Ejemplos validos: \"Visa ****1234\", \"Mastercard\", \"Debito Nacion\", \"Mercado Pago\".\n" +
+    "- Buscar variantes: Banco Ciudad, Bco Ciudad, Ciudad, Visa Debito Ciudad, Visa Credito Ciudad, Banco Macro, Macro, Visa Debito Macro, Visa Credito Macro, Joy, Tarjeta Joy, Mercado Pago.\n" +
+    "- Ejemplos validos: \"Visa Debito Banco Ciudad\", \"Visa Credito Banco Macro\", \"Joy\", \"Mercado Pago\", \"Debito Nacion\".\n" +
     "- No devuelvas solamente \"tarjeta\" si hay mas detalle disponible.\n" +
     "- Si no encuentras un dato, devuelvelo como null.\n"
   );
@@ -510,6 +511,8 @@ function buildSystemInstruction(hasPdf) {
     "- Si la fecha de un vuelo NO incluye año, inferilo usando la 'FECHA DE REFERENCIA DEL EMAIL' si aparece en el texto.\n" +
     "- Manejar cruces de medianoche: si arrivalHour < departureHour y NO hay fecha explícita de llegada, sumar 1 día a la fecha de llegada.\n" +
     "- Si no hay costo por tramo pero si costo total, asignalo al primer vuelo y deja el segundo sin cost (o null).\n" +
+    "- paymentMethod debe conservar el texto mas especifico disponible de tarjeta/banco/billetera/medio de pago.\n" +
+    "- Buscar variantes: Banco Ciudad, Bco Ciudad, Ciudad, Visa Debito Ciudad, Visa Credito Ciudad, Banco Macro, Macro, Visa Debito Macro, Visa Credito Macro, Joy, Tarjeta Joy, Mercado Pago.\n" +
     "- Si falta paymentMethod, dejarlo como \"\" o null.\n"
   );
 }
