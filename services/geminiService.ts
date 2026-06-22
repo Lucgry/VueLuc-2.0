@@ -1,6 +1,6 @@
 // services/geminiService.ts
 import type { Trip, Flight } from "../types";
-import { groupFlightsIntoTrips } from "./groupFlights";
+import { groupFlightsIntoTrips } from "./groupFlights.ts";
 
 type GeminiResponse = {
   flights: Flight[];

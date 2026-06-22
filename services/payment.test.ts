@@ -9,6 +9,9 @@ const cases: Array<[string, string]> = [
   ["Banco Ciudad", "Ciudad — tipo no detectado"],
   ["Banco Macro", "Macro — tipo no detectado"],
   ["texto sin forma de pago", "No detectado"],
+  ["Payment method Visa Crédito terminada en 8769", "Crédito Ciudad"],
+  ["Tarjeta Mastercard Banco Macro **** 1234", "Macro — tipo no detectado"],
+  ["Medio de pago Joy", "Joy"],
 ];
 
 for (const [input, expected] of cases) {

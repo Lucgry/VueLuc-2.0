@@ -8,6 +8,9 @@ export type PaymentMethodId =
   | "joy"
   | "mercado_pago"
   | "debito_nacion"
+  | "debito_banco_no_detectado"
+  | "credito_banco_no_detectado"
+  | "tarjeta_tipo_no_detectado"
   | "unknown";
 
 export interface NormalizedPaymentMethod {
@@ -65,6 +68,7 @@ export function normalizePaymentMethod(rawText?: string | null): NormalizedPayme
   const isJoy = hasAny(text, ["joy", "yoy", "tarjeta joy", "tarjeta yoy"]);
   const isMercadoPago = hasAny(text, ["mercado pago", "mercadopago", "mpago"]);
   const isNacion = hasAny(text, ["banco nacion", "banco nación", "nacion", "nación"]);
+  const isCardBrand = hasAny(text, ["visa", "mastercard", "master card", "amex", "american express"]);
 
   if (raw.includes("9417")) {
     return { id: "debito_ciudad", label: "Débito Ciudad", raw, detected: true, specificity: 100 };
@@ -107,6 +111,24 @@ export function normalizePaymentMethod(rawText?: string | null): NormalizedPayme
   if (isNacion && isDebit) {
     return { id: "debito_nacion", label: "Débito Nación", raw, detected: true, specificity: 80 };
   }
+  if (isDebit) {
+    return {
+      id: "debito_banco_no_detectado",
+      label: "Débito — banco no detectado",
+      raw,
+      detected: true,
+      specificity: 40,
+    };
+  }
+  if (isCredit) {
+    return {
+      id: "credito_banco_no_detectado",
+      label: "Crédito — banco no detectado",
+      raw,
+      detected: true,
+      specificity: 40,
+    };
+  }
   if (isCiudad) {
     return {
       id: "ciudad_tipo_no_detectado",
@@ -123,6 +145,15 @@ export function normalizePaymentMethod(rawText?: string | null): NormalizedPayme
       raw,
       detected: true,
       specificity: 50,
+    };
+  }
+  if (isCardBrand) {
+    return {
+      id: "tarjeta_tipo_no_detectado",
+      label: "Tarjeta — tipo no detectado",
+      raw,
+      detected: true,
+      specificity: 30,
     };
   }
 

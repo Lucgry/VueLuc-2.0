@@ -1,6 +1,6 @@
 import type { Trip, Flight } from "../types";
-import { parseFlightEmail } from "./geminiService";
-import { normalizePaymentMethod } from "./payment";
+import { parseFlightEmail } from "./geminiService.ts";
+import { normalizePaymentMethod, shouldReplacePaymentMethod } from "./payment.ts";
 
 export interface GmailImportSettings {
   lastScanAt?: string | null;
@@ -33,6 +33,26 @@ const GMAIL_SEARCH_QUERIES = [
 
 const MAX_MESSAGES_TO_READ = 25;
 const MAX_PROCESSED_MESSAGE_IDS = 500;
+const PAYMENT_BLOCK_PATTERNS = [
+  /medio\s+de\s+pago/i,
+  /m[eé]todo\s+de\s+pago/i,
+  /forma\s+de\s+pago/i,
+  /payment\s+method/i,
+  /tarjeta/i,
+  /\bpago\b/i,
+  /\bvisa\b/i,
+  /\bmastercard\b/i,
+  /banco\s+ciudad/i,
+  /bco\.?\s+ciudad/i,
+  /banco\s+macro/i,
+  /bco\.?\s+macro/i,
+  /\bmacro\b/i,
+  /\bciudad\b/i,
+  /\bjoy\b/i,
+  /\byoy\b/i,
+  /mercado\s*pago/i,
+  /\b\d{4}\b/,
+];
 
 function decodeBase64Url(value?: string): string {
   if (!value) return "";
@@ -92,6 +112,55 @@ function extractMessageText(payload: any): string {
   if (html) return htmlToText(html);
 
   return decodeBase64Url(payload?.body?.data || "");
+}
+
+function looksLikeJetSmartMessage(message: Pick<GmailImportMessage, "subject" | "from" | "text">): boolean {
+  const haystack = `${message.subject}\n${message.from}\n${message.text}`.toLowerCase();
+  return haystack.includes("jetsmart") || haystack.includes("jet smart");
+}
+
+export function detectJetSmartPaymentFromText(
+  text: string,
+  subject = ""
+): { candidatePaymentBlocks: string[]; detectedPaymentRaw: string | null } {
+  const normalizedText = (text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ");
+  const lines = normalizedText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const blocks: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!PAYMENT_BLOCK_PATTERNS.some((pattern) => pattern.test(lines[i]))) continue;
+
+    const block = lines
+      .slice(Math.max(0, i - 2), Math.min(lines.length, i + 5))
+      .join(" | ");
+
+    if (!blocks.includes(block)) blocks.push(block);
+  }
+
+  const sortedBlocks = blocks.sort((a, b) => {
+    const aPayment = normalizePaymentMethod(a);
+    const bPayment = normalizePaymentMethod(b);
+    return bPayment.specificity - aPayment.specificity;
+  });
+  const detectedPaymentRaw =
+    sortedBlocks.find((block) => normalizePaymentMethod(block).detected) || null;
+
+  console.log("[jetsmartPaymentDetection]", {
+    subject,
+    candidatePaymentBlocks: sortedBlocks,
+    detectedPaymentRaw,
+    normalizedPaymentMethod: normalizePaymentMethod(detectedPaymentRaw),
+  });
+
+  return {
+    candidatePaymentBlocks: sortedBlocks,
+    detectedPaymentRaw,
+  };
 }
 
 async function gmailFetch<T>(accessToken: string, path: string): Promise<T> {
@@ -193,19 +262,29 @@ async function readMessage(accessToken: string, id: string): Promise<GmailImport
 
 function withGmailMetadata(
   trip: Omit<Trip, "id" | "createdAt">,
-  message: GmailImportMessage
+  message: GmailImportMessage,
+  detectedPaymentRaw?: string | null
 ): Omit<Trip, "id" | "createdAt"> {
-  const addMetadata = (flight: Flight | null): Flight | null =>
-    flight
-      ? {
-          ...flight,
-          source: "gmail",
-          gmailMessageId: message.id,
-          gmailSubject: message.subject,
-          gmailDate: message.date,
-          gmailFrom: message.from,
-        }
-      : null;
+  const addMetadata = (flight: Flight | null): Flight | null => {
+    if (!flight) return null;
+
+    const paymentMethod = shouldReplacePaymentMethod(
+      flight.paymentMethod,
+      detectedPaymentRaw
+    )
+      ? normalizePaymentMethod(detectedPaymentRaw).label
+      : normalizePaymentMethod(flight.paymentMethod).label;
+
+    return {
+      ...flight,
+      paymentMethod,
+      source: "gmail",
+      gmailMessageId: message.id,
+      gmailSubject: message.subject,
+      gmailDate: message.date,
+      gmailFrom: message.from,
+    };
+  };
 
   return {
     ...trip,
@@ -263,15 +342,23 @@ function dedupeTrips(
   return deduped;
 }
 
-function buildParserInput(message: GmailImportMessage): string {
+function buildParserInput(
+  message: GmailImportMessage,
+  detectedPaymentRaw?: string | null,
+  candidatePaymentBlocks: string[] = []
+): string {
   return [
     `FECHA DE REFERENCIA DEL EMAIL: ${message.date}`,
     `GMAIL MESSAGE ID: ${message.id}`,
     `FROM: ${message.from}`,
     `SUBJECT: ${message.subject}`,
+    detectedPaymentRaw ? `PAGO DETECTADO EN BODY: ${detectedPaymentRaw}` : "",
+    candidatePaymentBlocks.length
+      ? `BLOQUES CANDIDATOS DE PAGO:\n${candidatePaymentBlocks.join("\n")}`
+      : "",
     "",
     message.text,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 export async function importTripsFromGmail(
@@ -297,14 +384,23 @@ export async function importTripsFromGmail(
 
     try {
       const message = await readMessage(accessToken, id);
-      const parserInput = buildParserInput(message);
+      const jetSmartPayment = looksLikeJetSmartMessage(message)
+        ? detectJetSmartPaymentFromText(message.text, message.subject)
+        : { candidatePaymentBlocks: [], detectedPaymentRaw: null };
+      const parserInput = buildParserInput(
+        message,
+        jetSmartPayment.detectedPaymentRaw,
+        jetSmartPayment.candidatePaymentBlocks
+      );
       const parsedTrips = await parseFlightEmail("", parserInput, null);
 
       if (parsedTrips.length === 0) {
         discarded += 1;
       } else {
         parsed += 1;
-        const tripsWithMetadata = parsedTrips.map((trip) => withGmailMetadata(trip, message));
+        const tripsWithMetadata = parsedTrips.map((trip) =>
+          withGmailMetadata(trip, message, jetSmartPayment.detectedPaymentRaw)
+        );
         for (const trip of tripsWithMetadata) {
           for (const flight of [trip.departureFlight, trip.returnFlight]) {
             if (!flight) continue;
