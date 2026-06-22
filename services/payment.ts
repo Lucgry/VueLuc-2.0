@@ -11,7 +11,10 @@ export type PaymentMethodId =
   | "debito_banco_no_detectado"
   | "credito_banco_no_detectado"
   | "tarjeta_tipo_no_detectado"
+  | "otro"
   | "unknown";
+
+export type PaymentSource = "gmail" | "email" | "pdf" | "manual" | null;
 
 export interface NormalizedPaymentMethod {
   id: PaymentMethodId;
@@ -28,6 +31,19 @@ const UNKNOWN_PAYMENT: NormalizedPaymentMethod = {
   detected: false,
   specificity: 0,
 };
+
+export const PAYMENT_METHOD_OPTIONS = [
+  "Débito Ciudad",
+  "Crédito Ciudad",
+  "Débito Macro",
+  "Crédito Macro",
+  "Joy",
+  "Mercado Pago",
+  "Ciudad — tipo no detectado",
+  "Macro — tipo no detectado",
+  "Otro",
+  "No detectado",
+];
 
 function normalizeText(value?: string | null): string {
   return (value || "")
@@ -49,6 +65,10 @@ export function normalizePaymentMethod(rawText?: string | null): NormalizedPayme
 
   if (!text || text === "unknown" || text === "no detectado" || text === "n/a") {
     return { ...UNKNOWN_PAYMENT, raw: raw || null };
+  }
+
+  if (text === "otro" || text === "other") {
+    return { id: "otro", label: "Otro", raw, detected: true, specificity: 20 };
   }
 
   const isDebit = hasAny(text, ["debito", "debit", "visa debito", "mastercard debito"]);
@@ -174,6 +194,34 @@ export function shouldReplacePaymentMethod(
   if (!candidatePayment.detected) return false;
   if (!currentPayment.detected) return true;
   return candidatePayment.specificity > currentPayment.specificity;
+}
+
+export function shouldReplaceFlightPayment(
+  currentMethod?: string | null,
+  currentSource?: PaymentSource,
+  candidateMethod?: string | null,
+  candidateSource?: PaymentSource
+): boolean {
+  const candidatePayment = normalizePaymentMethod(candidateMethod);
+  if (!candidatePayment.detected) return false;
+
+  if (currentSource === "manual") {
+    const currentPayment = normalizePaymentMethod(currentMethod);
+    if (
+      candidateSource === "pdf" &&
+      currentPayment.detected &&
+      currentPayment.id !== candidatePayment.id
+    ) {
+      console.warn("Conflicto de forma de pago: se conserva valor manual", {
+        currentPayment,
+        candidatePayment,
+        candidateSource,
+      });
+    }
+    return false;
+  }
+
+  return shouldReplacePaymentMethod(currentMethod, candidateMethod);
 }
 
 export function chooseBetterPaymentMethod(

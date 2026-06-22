@@ -11,6 +11,8 @@ export interface Flight {
   arrivalDateTime: string | null;
   cost: number | null;
   paymentMethod: string | null;
+  paymentSource?: "gmail" | "email" | "pdf" | "manual" | null;
+  paymentUpdatedAt?: string | null;
   bookingReference: string | null;
   passengerName?: string | null;
   source?: "gmail" | "manual" | "email" | null;

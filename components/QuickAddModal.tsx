@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { Trip, Flight } from '../types';
 import { PencilSquareIcon } from './icons/PencilSquareIcon';
 import { Spinner } from './Spinner';
-import { normalizePaymentMethod } from '../services/payment';
+import { PAYMENT_METHOD_OPTIONS, normalizePaymentMethod } from '../services/payment';
 
 interface QuickAddModalProps {
   onClose: () => void;
@@ -47,28 +47,16 @@ const initialIdaData: FlightData = {
     flightNum: '', bookingReference: '', airline: '', depCode: 'SLA', depCity: 'Salta', arrCode: 'AEP', arrCity: 'Buenos Aires',
     depDate: formatDateForInput(getNextDayOfWeek(2)), depTime: '11:00',
     arrDate: formatDateForInput(getNextDayOfWeek(2)), arrTime: '13:05',
-    cost: '', paymentMethod: 'Débito Macro'
+    cost: '', paymentMethod: 'No detectado'
 };
 
 const initialVueltaData: FlightData = {
     flightNum: '', bookingReference: '', airline: '', depCode: 'AEP', depCity: 'Buenos Aires', arrCode: 'SLA', arrCity: 'Salta',
     depDate: formatDateForInput(getNextDayOfWeek(5)), depTime: '19:30',
     arrDate: formatDateForInput(getNextDayOfWeek(5)), arrTime: '21:35',
-    cost: '', paymentMethod: 'Débito Macro'
+    cost: '', paymentMethod: 'No detectado'
 };
 
-const paymentOptions = [
-    'Débito Macro',
-    'Débito Ciudad',
-    'Crédito Macro',
-    'Crédito Ciudad',
-    'Débito Nación',
-    'Joy',
-    'Mercado Pago',
-    'Ciudad — tipo no detectado',
-    'Macro — tipo no detectado',
-    'No detectado',
-];
 const inputClasses = "w-full p-2 border-none rounded-md bg-slate-100 dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 transition shadow-neumo-light-in dark:shadow-neumo-dark-in";
 
 const FlightFieldSet: React.FC<{
@@ -107,7 +95,7 @@ const FlightFieldSet: React.FC<{
                 <div><label className="text-xs font-medium text-slate-600 dark:text-slate-400">Fecha Llegada</label><input type="date" value={data.arrDate} onChange={handleInputChange('arrDate')} className={inputClasses} /></div>
                 <div><label className="text-xs font-medium text-slate-600 dark:text-slate-400">Hora Llegada</label><input type="time" value={data.arrTime} onChange={handleInputChange('arrTime')} className={inputClasses} /></div>
                 <div><label className="text-xs font-medium text-slate-600 dark:text-slate-400">Costo</label><input type="number" step="0.01" value={data.cost} onChange={handleInputChange('cost')} placeholder="0.00" className={inputClasses} /></div>
-                <div><label className="text-xs font-medium text-slate-600 dark:text-slate-400">Método de Pago</label><select value={data.paymentMethod} onChange={handleInputChange('paymentMethod')} className={inputClasses}>{paymentOptions.map(o => <option key={o} value={o}>{o}</option>)}</select></div>
+                <div><label className="text-xs font-medium text-slate-600 dark:text-slate-400">Método de Pago</label><select value={data.paymentMethod} onChange={handleInputChange('paymentMethod')} className={inputClasses}>{PAYMENT_METHOD_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select></div>
             </div>
         </fieldset>
     );
@@ -148,6 +136,8 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ onClose, onAddTrip }) => 
                 arrivalDateTime: arrDateTime.toISOString(),
                 cost: data.cost ? parseFloat(data.cost) : null,
                 paymentMethod: normalizePaymentMethod(data.paymentMethod).label,
+                paymentSource: 'manual',
+                paymentUpdatedAt: new Date().toISOString(),
                 bookingReference: data.bookingReference.toUpperCase().trim() || null,
             };
         };

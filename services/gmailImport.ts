@@ -278,6 +278,7 @@ function withGmailMetadata(
     return {
       ...flight,
       paymentMethod,
+      paymentSource: normalizePaymentMethod(paymentMethod).detected ? "gmail" : null,
       source: "gmail",
       gmailMessageId: message.id,
       gmailSubject: message.subject,

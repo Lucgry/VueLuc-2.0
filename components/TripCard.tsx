@@ -14,7 +14,11 @@ import { TrashIcon } from "./icons/TrashIcon";
 import { Spinner } from "./Spinner";
 import { LinkSlashIcon } from "./icons/LinkSlashIcon";
 import { CalendarPlusIcon } from "./icons/CalendarPlusIcon";
-import { formatPaymentMethod as formatNormalizedPaymentMethod } from "../services/payment";
+import {
+  PAYMENT_METHOD_OPTIONS,
+  formatPaymentMethod as formatNormalizedPaymentMethod,
+  normalizePaymentMethod,
+} from "../services/payment";
 
 // ✅ NORMALIZA ida/vuelta por dirección real
 import { isValidRoundTripPair, normalizeTripFlights } from "../services/tripLeg";
@@ -203,6 +207,7 @@ interface TripCardProps {
   groupingState: { active: boolean; sourceTrip: Trip | null };
   onStartGrouping: (trip: Trip) => void;
   onConfirmGrouping: (targetTrip: Trip) => void;
+  onUpdatePayment: (trip: Trip, leg: "ida" | "vuelta", paymentMethod: string) => Promise<void>;
 }
 
 type DeletionState = "idle" | "confirming" | "deleting";
@@ -217,6 +222,7 @@ const TripCard: React.FC<TripCardProps> = ({
   groupingState,
   onStartGrouping,
   onConfirmGrouping,
+  onUpdatePayment,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -240,6 +246,9 @@ const TripCard: React.FC<TripCardProps> = ({
   const [viewingBoardingPass, setViewingBoardingPass] = useState<BoardingPassData | null>(
     null
   );
+  const [editingPaymentLeg, setEditingPaymentLeg] = useState<"ida" | "vuelta" | null>(null);
+  const [paymentDraft, setPaymentDraft] = useState("");
+  const [savingPaymentLeg, setSavingPaymentLeg] = useState<"ida" | "vuelta" | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const flightTypeToUpload = useRef<"ida" | "vuelta" | null>(null);
 
@@ -561,6 +570,104 @@ const TripCard: React.FC<TripCardProps> = ({
     thisLeg !== sourceLeg &&
     isValidRoundTripPair(groupingIdaCandidate, groupingVueltaCandidate);
 
+  const getPaymentLabel = (flight?: Flight | null) =>
+    formatNormalizedPaymentMethod(flight?.paymentMethod ?? null);
+
+  const isUnknownPayment = (flight?: Flight | null) =>
+    !normalizePaymentMethod(flight?.paymentMethod ?? null).detected;
+
+  const paymentSummary = [
+    idaFlight ? `Ida: ${getPaymentLabel(idaFlight)}` : null,
+    vueltaFlight ? `Vuelta: ${getPaymentLabel(vueltaFlight)}` : null,
+  ].filter(Boolean).join(" · ");
+
+  const beginPaymentEdit = (
+    e: React.MouseEvent,
+    leg: "ida" | "vuelta",
+    flight: Flight
+  ) => {
+    e.stopPropagation();
+    setEditingPaymentLeg(leg);
+    setPaymentDraft(getPaymentLabel(flight));
+  };
+
+  const cancelPaymentEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingPaymentLeg(null);
+    setPaymentDraft("");
+  };
+
+  const savePaymentEdit = async (e: React.MouseEvent, leg: "ida" | "vuelta") => {
+    e.stopPropagation();
+    setSavingPaymentLeg(leg);
+    try {
+      await onUpdatePayment(trip, leg, paymentDraft);
+      setEditingPaymentLeg(null);
+      setPaymentDraft("");
+    } catch (error) {
+      console.error("Error actualizando forma de pago:", error);
+      alert("No se pudo guardar la forma de pago.");
+    } finally {
+      setSavingPaymentLeg(null);
+    }
+  };
+
+  const PaymentEditor: React.FC<{ leg: "ida" | "vuelta"; flight: Flight }> = ({
+    leg,
+    flight,
+  }) => {
+    const isEditing = editingPaymentLeg === leg;
+    const isSaving = savingPaymentLeg === leg;
+
+    if (isEditing) {
+      return (
+        <div className="mt-2 flex flex-col sm:flex-row gap-2 sm:items-center">
+          <select
+            value={paymentDraft}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => setPaymentDraft(e.target.value)}
+            className="w-full sm:w-56 px-2 py-1.5 rounded-md bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-sm"
+            disabled={isSaving}
+          >
+            {PAYMENT_METHOD_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={(e) => savePaymentEdit(e, leg)}
+              className="px-3 py-1.5 rounded-md text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
+              disabled={isSaving}
+            >
+              {isSaving ? "Guardando..." : "Guardar"}
+            </button>
+            <button
+              type="button"
+              onClick={cancelPaymentEdit}
+              className="px-3 py-1.5 rounded-md text-sm font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
+              disabled={isSaving}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={(e) => beginPaymentEdit(e, leg, flight)}
+        className="ml-2 inline-flex px-2 py-1 rounded-md text-xs font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600"
+      >
+        {isUnknownPayment(flight) ? "Agregar forma de pago" : "Editar forma de pago"}
+      </button>
+    );
+  };
+
   let cardClasses = `relative bg-white dark:bg-slate-800 backdrop-blur-md rounded-xl transition-all duration-300 border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden ${
     isPast ? "opacity-70 hover:opacity-100" : ""
   } ${isNext ? "next-trip-glow" : ""}`;
@@ -657,6 +764,12 @@ const TripCard: React.FC<TripCardProps> = ({
                 <span>{status.text}</span>
               </div>
             )}
+
+            {paymentSummary && (
+              <div className="text-xs text-slate-600 dark:text-slate-400">
+                <strong>Forma de pago:</strong> {paymentSummary}
+              </div>
+            )}
           </div>
         </div>
 
@@ -703,20 +816,22 @@ const TripCard: React.FC<TripCardProps> = ({
             <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
               <div className="text-sm space-y-1 text-slate-700 dark:text-slate-300 w-full sm:w-auto">
                 {idaFlight && (
-                  <p>
+                  <div>
                     <strong>Costo Ida:</strong>{" "}
                     {idaFlight.cost != null ? `$${idaFlight.cost.toLocaleString("es-AR")}` : "N/A"}
                     {" · "}
-                    <strong>Forma de pago:</strong> {formatNormalizedPaymentMethod(idaFlight.paymentMethod ?? null)}
-                  </p>
+                    <strong>Forma de pago:</strong> {getPaymentLabel(idaFlight)}
+                    <PaymentEditor leg="ida" flight={idaFlight} />
+                  </div>
                 )}
                 {vueltaFlight && (
-                  <p>
+                  <div>
                     <strong>Costo Vuelta:</strong>{" "}
                     {vueltaFlight.cost != null ? `$${vueltaFlight.cost.toLocaleString("es-AR")}` : "N/A"}
                     {" · "}
-                    <strong>Forma de pago:</strong> {formatNormalizedPaymentMethod(vueltaFlight.paymentMethod ?? null)}
-                  </p>
+                    <strong>Forma de pago:</strong> {getPaymentLabel(vueltaFlight)}
+                    <PaymentEditor leg="vuelta" flight={vueltaFlight} />
+                  </div>
                 )}
               </div>
 

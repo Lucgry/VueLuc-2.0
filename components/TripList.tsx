@@ -18,6 +18,7 @@ interface TripListProps {
   groupingState: { active: boolean; sourceTrip: Trip | null };
   onStartGrouping: (trip: Trip) => void;
   onConfirmGrouping: (targetTrip: Trip) => void;
+  onUpdatePayment: (trip: Trip, leg: 'ida' | 'vuelta', paymentMethod: string) => Promise<void>;
 }
 
 const emptyMessages = {
@@ -69,7 +70,7 @@ const YearSeparator: React.FC<{ year: number }> = ({ year }) => (
   </div>
 );
 
-const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, onSplitTrip, listFilter, nextTripId, userId, groupingState, onStartGrouping, onConfirmGrouping }) => {
+const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, onSplitTrip, listFilter, nextTripId, userId, groupingState, onStartGrouping, onConfirmGrouping, onUpdatePayment }) => {
   if (trips.length === 0 && !groupingState.active) {
     const { title, message, icon } = emptyMessages[listFilter] || emptyMessages.future;
     return (
@@ -113,6 +114,7 @@ const TripList: React.FC<TripListProps> = ({ trips, onDeleteTrip, onSplitTrip, l
               groupingState={groupingState}
               onStartGrouping={onStartGrouping}
               onConfirmGrouping={onConfirmGrouping}
+              onUpdatePayment={onUpdatePayment}
             />
           </React.Fragment>
         );

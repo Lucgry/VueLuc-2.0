@@ -30,7 +30,7 @@ import {
 import {
   chooseBetterPaymentMethod,
   normalizePaymentMethod,
-  shouldReplacePaymentMethod,
+  shouldReplaceFlightPayment,
 } from "./services/payment";
 
 // ✅ normalización ida/vuelta (tu lógica)
@@ -228,8 +228,16 @@ const mergeFlightFinancialData = (existing: Flight, candidate: Flight): Flight =
     next.cost = candidate.cost;
   }
 
-  if (shouldReplacePaymentMethod(next.paymentMethod, candidate.paymentMethod)) {
+  if (
+    shouldReplaceFlightPayment(
+      next.paymentMethod,
+      next.paymentSource ?? null,
+      candidate.paymentMethod,
+      candidate.paymentSource ?? candidate.source ?? null
+    )
+  ) {
     next.paymentMethod = chooseBetterPaymentMethod(next.paymentMethod, candidate.paymentMethod);
+    next.paymentSource = candidate.paymentSource ?? candidate.source ?? null;
   } else {
     const currentPayment = normalizePaymentMethod(next.paymentMethod);
     const candidatePayment = normalizePaymentMethod(candidate.paymentMethod);
@@ -246,7 +254,10 @@ const mergeFlightFinancialData = (existing: Flight, candidate: Flight): Flight =
         departureDateTime: existing.departureDateTime,
       });
     }
-    next.paymentMethod = chooseBetterPaymentMethod(next.paymentMethod, candidate.paymentMethod);
+    next.paymentMethod =
+      next.paymentSource === "manual"
+        ? normalizePaymentMethod(next.paymentMethod).label
+        : chooseBetterPaymentMethod(next.paymentMethod, candidate.paymentMethod);
   }
 
   return next;
@@ -945,7 +956,8 @@ const App: React.FC = () => {
         const mergedFlight = mergeFlightFinancialData(entry.existing, candidate);
         const changed =
           mergedFlight.cost !== entry.existing.cost ||
-          mergedFlight.paymentMethod !== entry.existing.paymentMethod;
+          mergedFlight.paymentMethod !== entry.existing.paymentMethod ||
+          mergedFlight.paymentSource !== entry.existing.paymentSource;
 
         if (!changed) return false;
 
@@ -967,6 +979,47 @@ const App: React.FC = () => {
     }
 
     return false;
+  };
+
+  const onUpdateTripPayment = async (
+    trip: Trip,
+    leg: "ida" | "vuelta",
+    paymentMethod: string
+  ) => {
+    if (!user || !db) return;
+
+    const { idaFlight, vueltaFlight } = normalizeTripFlights(trip);
+    const flight = leg === "ida" ? idaFlight : vueltaFlight;
+    if (!flight) return;
+
+    const field =
+      trip.departureFlight === flight
+        ? "departureFlight"
+        : trip.returnFlight === flight
+        ? "returnFlight"
+        : null;
+
+    if (!field) {
+      console.warn("No se pudo resolver el campo del tramo para editar pago", {
+        tripId: trip.id,
+        leg,
+      });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const normalizedPayment = normalizePaymentMethod(paymentMethod).label;
+    const updatedFlight: Flight = {
+      ...flight,
+      paymentMethod: normalizedPayment,
+      paymentSource: "manual",
+      paymentUpdatedAt: nowIso,
+    };
+
+    await updateDoc(doc(db, "users", user.uid, "trips", trip.id), {
+      [field]: updatedFlight,
+      updatedAt: nowIso,
+    });
   };
 
   /**
@@ -1468,6 +1521,7 @@ const App: React.FC = () => {
               groupingState={groupingState}
               onStartGrouping={onStartGrouping}
               onConfirmGrouping={onConfirmGrouping}
+              onUpdatePayment={onUpdateTripPayment}
             />
           </>
         )}
