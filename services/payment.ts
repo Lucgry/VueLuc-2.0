@@ -34,15 +34,10 @@ const UNKNOWN_PAYMENT: NormalizedPaymentMethod = {
 
 export const PAYMENT_METHOD_OPTIONS = [
   "Débito Ciudad",
-  "Crédito Ciudad",
   "Débito Macro",
+  "Crédito Ciudad",
   "Crédito Macro",
   "Joy",
-  "Mercado Pago",
-  "Ciudad — tipo no detectado",
-  "Macro — tipo no detectado",
-  "Otro",
-  "No detectado",
 ];
 
 function normalizeText(value?: string | null): string {
