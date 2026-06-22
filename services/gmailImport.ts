@@ -16,6 +16,8 @@ export interface GmailImportMessage {
   from: string;
   date: string;
   text: string;
+  plainText: string;
+  html: string;
 }
 
 export interface GmailImportResult {
@@ -105,14 +107,18 @@ function collectBodyParts(payload: any, mimeType: string): string[] {
   return matches;
 }
 
-function extractMessageText(payload: any): string {
-  const plain = collectBodyParts(payload, "text/plain").join("\n").trim();
-  if (plain) return plain;
-
+function extractMessageBodies(payload: any): { text: string; plainText: string; html: string } {
+  const plainText = collectBodyParts(payload, "text/plain").join("\n").trim();
   const html = collectBodyParts(payload, "text/html").join("\n").trim();
-  if (html) return htmlToText(html);
+  const fallback = decodeBase64Url(payload?.body?.data || "");
+  const htmlText = html ? htmlToText(html) : "";
+  const text = [plainText || fallback, htmlText].filter(Boolean).join("\n").trim();
 
-  return decodeBase64Url(payload?.body?.data || "");
+  return {
+    text: text || fallback,
+    plainText: plainText || fallback,
+    html,
+  };
 }
 
 function looksLikeJetSmartMessage(message: Pick<GmailImportMessage, "subject" | "from" | "text">): boolean {
@@ -252,12 +258,16 @@ async function readMessage(accessToken: string, id: string): Promise<GmailImport
       ? parsedHeaderDate.toISOString()
       : new Date().toISOString();
 
+  const bodies = extractMessageBodies(data.payload || "");
+
   return {
     id,
     subject: getHeader(headers, "Subject"),
     from: getHeader(headers, "From"),
     date,
-    text: extractMessageText(data.payload || ""),
+    text: bodies.text,
+    plainText: bodies.plainText,
+    html: bodies.html,
   };
 }
 
@@ -314,8 +324,10 @@ function normalizeAirlineForReservation(value?: string | null): string {
 
 function extractReservationCodesFromText(text: string): string[] {
   const patterns = [
+    /confirmaci[oó]n[ \t]+(?:de[ \t]+)?reserva[ \t]+([A-Z0-9]{5,8})/gi,
     /c[oó]digo[ \t]+de[ \t]+reserva[ \t]*:?[ \t]*([A-Z0-9]{4,10})/gi,
     /(?:booking[ \t]+(?:code|reference)|pnr|record[ \t]+locator|localizador|n[°º]?[ \t]+de[ \t]+reserva|n[uú]mero[ \t]+de[ \t]+reserva)[ \t]*:?[ \t]*([A-Z0-9]{4,10})/gi,
+    /(?:^|\n)[ \t]*reserva[ \t]+n[°º]?[ \t]*([A-Z0-9]{5,8})/gi,
     /(?:^|\n)[ \t]*reserva[ \t]*:?[ \t]*([A-Z0-9]{4,10})/gi,
   ];
   const codes = new Set<string>();
@@ -341,6 +353,9 @@ function inferSharedReservationCode(
   const detectedReservationCodes = new Set<string>();
 
   for (const code of extractReservationCodesFromText(message.text)) {
+    detectedReservationCodes.add(code);
+  }
+  for (const code of extractReservationCodesFromText(message.html)) {
     detectedReservationCodes.add(code);
   }
   for (const flight of flights) {
@@ -373,6 +388,16 @@ function inferSharedReservationCode(
     })),
     sharedReservationCode,
   });
+
+  if (looksLikeJetSmartMessage(message)) {
+    console.log("[jetSmartReservationDetection]", {
+      subject: message.subject,
+      gmailMessageId: message.id,
+      htmlSnippet: message.html.slice(0, 600),
+      plainTextSnippet: message.plainText.slice(0, 600),
+      reservationCode: sharedReservationCode || codes[0] || null,
+    });
+  }
 
   return sharedReservationCode;
 }

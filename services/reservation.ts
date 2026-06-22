@@ -3,7 +3,9 @@ export function normalizeReservationCode(value?: string | null): string | null {
   if (!raw) return null;
 
   const text = raw
-    .replace(/^(codigo\s+de\s+reserva|código\s+de\s+reserva|codigo|código|reserva|booking code|booking reference|pnr|record locator|localizador|n[°º] de reserva|numero de reserva|número de reserva)\s*:?\s*/i, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/^(confirmacion\s+(de\s+)?reserva|codigo\s+de\s+reserva|codigo|reserva\s+n[°º]?|reserva|booking code|booking reference|pnr|record locator|localizador|n[°º] de reserva|numero de reserva)\s*:?\s*/i, "")
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");

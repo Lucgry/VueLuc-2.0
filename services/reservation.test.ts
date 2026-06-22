@@ -9,6 +9,7 @@ const extractCases: Array<[string, string]> = [
   ["PNR ABC123", "ABC123"],
   ["Record locator: xy9z7q", "XY9Z7Q"],
   ["Número de reserva OGPLLZ", "OGPLLZ"],
+  ["Confirmación Reserva F87H5J", "F87H5J"],
 ];
 
 for (const [input, expected] of extractCases) {
