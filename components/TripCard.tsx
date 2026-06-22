@@ -588,6 +588,37 @@ const TripCard: React.FC<TripCardProps> = ({
     vueltaFlight ? `Vuelta: ${getPaymentLabel(vueltaFlight)}` : null,
   ].filter(Boolean).join(" · ");
 
+  const idaPayment = idaFlight ? getPaymentLabel(idaFlight) : null;
+  const vueltaPayment = vueltaFlight ? getPaymentLabel(vueltaFlight) : null;
+  const showPaymentByLeg =
+    !!idaFlight && !!vueltaFlight && idaPayment !== vueltaPayment;
+  const paymentHeaderRows =
+    idaFlight && vueltaFlight && idaPayment === vueltaPayment
+      ? [
+          {
+            label: `Forma de pago: ${idaPayment}`,
+            editors: [
+              { leg: "ida" as const, flight: idaFlight },
+              { leg: "vuelta" as const, flight: vueltaFlight },
+            ],
+          },
+        ]
+      : idaFlight && !vueltaFlight
+      ? [
+          {
+            label: `Forma de pago: ${idaPayment}`,
+            editors: [{ leg: "ida" as const, flight: idaFlight }],
+          },
+        ]
+      : vueltaFlight && !idaFlight
+      ? [
+          {
+            label: `Forma de pago: ${vueltaPayment}`,
+            editors: [{ leg: "vuelta" as const, flight: vueltaFlight }],
+          },
+        ]
+      : [];
+
   const beginPaymentEdit = (
     e: React.MouseEvent,
     leg: "ida" | "vuelta",
@@ -691,6 +722,49 @@ const TripCard: React.FC<TripCardProps> = ({
           idaFlight ? `Código ida: ${getReservationLabel(idaFlight)}` : null,
           vueltaFlight ? `Código vuelta: ${getReservationLabel(vueltaFlight)}` : null,
         ].filter(Boolean).join(" · ");
+
+  const reservationHeaderRows =
+    idaFlight && vueltaFlight && idaReservation && idaReservation === vueltaReservation
+      ? [
+          {
+            label: `Código de reserva: ${idaReservation}`,
+            editors: [
+              { leg: "ida" as const, flight: idaFlight },
+              { leg: "vuelta" as const, flight: vueltaFlight },
+            ],
+          },
+        ]
+      : idaFlight && !vueltaFlight
+      ? [
+          {
+            label: `Código de reserva: ${getReservationLabel(idaFlight)}`,
+            editors: [{ leg: "ida" as const, flight: idaFlight }],
+          },
+        ]
+      : vueltaFlight && !idaFlight
+      ? [
+          {
+            label: `Código de reserva: ${getReservationLabel(vueltaFlight)}`,
+            editors: [{ leg: "vuelta" as const, flight: vueltaFlight }],
+          },
+        ]
+      : [
+          idaFlight
+            ? {
+                label: `Código ida: ${getReservationLabel(idaFlight)}`,
+                editors: [{ leg: "ida" as const, flight: idaFlight }],
+              }
+            : null,
+          vueltaFlight
+            ? {
+                label: `Código vuelta: ${getReservationLabel(vueltaFlight)}`,
+                editors: [{ leg: "vuelta" as const, flight: vueltaFlight }],
+              }
+            : null,
+        ].filter(Boolean) as Array<{
+          label: string;
+          editors: Array<{ leg: "ida" | "vuelta"; flight: Flight }>;
+        }>;
 
   const beginReservationEdit = (
     e: React.MouseEvent,
@@ -878,17 +952,29 @@ const TripCard: React.FC<TripCardProps> = ({
               </div>
             )}
 
-            {paymentSummary && (
-              <div className="text-xs text-slate-600 dark:text-slate-400">
-                <strong>Forma de pago:</strong> {paymentSummary}
+            {paymentHeaderRows.map((row) => (
+              <div
+                key={row.label}
+                className="text-xs text-slate-600 dark:text-slate-400 flex flex-wrap items-center gap-1"
+              >
+                <strong>{row.label}</strong>
+                {row.editors.map(({ leg, flight }) => (
+                  <PaymentEditor key={leg} leg={leg} flight={flight} />
+                ))}
               </div>
-            )}
+            ))}
 
-            {reservationSummary && (
-              <div className="text-xs text-slate-600 dark:text-slate-400">
-                <strong>{reservationSummary}</strong>
+            {reservationHeaderRows.map((row) => (
+              <div
+                key={row.label}
+                className="text-xs text-slate-600 dark:text-slate-400 flex flex-wrap items-center gap-1"
+              >
+                <strong>{row.label}</strong>
+                {row.editors.map(({ leg, flight }) => (
+                  <ReservationEditor key={leg} leg={leg} flight={flight} />
+                ))}
               </div>
-            )}
+            ))}
           </div>
         </div>
 
@@ -938,26 +1024,26 @@ const TripCard: React.FC<TripCardProps> = ({
                   <div>
                     <strong>Costo Ida:</strong>{" "}
                     {idaFlight.cost != null ? `$${idaFlight.cost.toLocaleString("es-AR")}` : "N/A"}
-                    {" · "}
-                    <strong>Forma de pago:</strong> {getPaymentLabel(idaFlight)}
-                    <PaymentEditor leg="ida" flight={idaFlight} />
-                    <div className="mt-1">
-                      <strong>Código de reserva:</strong> {getReservationLabel(idaFlight)}
-                      <ReservationEditor leg="ida" flight={idaFlight} />
-                    </div>
+                    {showPaymentByLeg && (
+                      <>
+                        {" · "}
+                        <strong>Forma de pago:</strong> {getPaymentLabel(idaFlight)}
+                        <PaymentEditor leg="ida" flight={idaFlight} />
+                      </>
+                    )}
                   </div>
                 )}
                 {vueltaFlight && (
                   <div>
                     <strong>Costo Vuelta:</strong>{" "}
                     {vueltaFlight.cost != null ? `$${vueltaFlight.cost.toLocaleString("es-AR")}` : "N/A"}
-                    {" · "}
-                    <strong>Forma de pago:</strong> {getPaymentLabel(vueltaFlight)}
-                    <PaymentEditor leg="vuelta" flight={vueltaFlight} />
-                    <div className="mt-1">
-                      <strong>Código de reserva:</strong> {getReservationLabel(vueltaFlight)}
-                      <ReservationEditor leg="vuelta" flight={vueltaFlight} />
-                    </div>
+                    {showPaymentByLeg && (
+                      <>
+                        {" · "}
+                        <strong>Forma de pago:</strong> {getPaymentLabel(vueltaFlight)}
+                        <PaymentEditor leg="vuelta" flight={vueltaFlight} />
+                      </>
+                    )}
                   </div>
                 )}
               </div>

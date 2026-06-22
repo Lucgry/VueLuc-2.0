@@ -282,7 +282,26 @@ const mergeFlightFinancialData = (existing: Flight, candidate: Flight): Flight =
       departureDateTime: existing.departureDateTime,
     }
   );
-  if (mergedReservationCode && mergedReservationCode !== getFlightReservationCode(next)) {
+  const existingReservationCode = getFlightReservationCode(next);
+  const incomingReservationCode = getFlightReservationCode(candidate);
+  const reservationDecision =
+    !incomingReservationCode
+      ? "ignore_empty_incoming"
+      : !existingReservationCode
+      ? "complete_missing_existing"
+      : existingReservationCode === incomingReservationCode
+      ? "keep_matching_existing"
+      : "conflict_keep_existing";
+
+  console.log("[reservationMerge]", {
+    existingReservationCode,
+    incomingReservationCode,
+    decision: reservationDecision,
+    flightNumber: existing.flightNumber,
+    departureDateTime: existing.departureDateTime,
+  });
+
+  if (mergedReservationCode && mergedReservationCode !== existingReservationCode) {
     next.reservationCode = mergedReservationCode;
     next.bookingReference = mergedReservationCode;
     next.reservationSource = candidate.reservationSource ?? candidate.source ?? null;

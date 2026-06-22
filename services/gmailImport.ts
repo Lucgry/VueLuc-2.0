@@ -1,7 +1,7 @@
 import type { Trip, Flight } from "../types";
 import { parseFlightEmail } from "./geminiService.ts";
 import { normalizePaymentMethod, shouldReplacePaymentMethod } from "./payment.ts";
-import { getFlightReservationCode } from "./reservation.ts";
+import { getFlightReservationCode, normalizeReservationCode } from "./reservation.ts";
 
 export interface GmailImportSettings {
   lastScanAt?: string | null;
@@ -264,7 +264,8 @@ async function readMessage(accessToken: string, id: string): Promise<GmailImport
 function withGmailMetadata(
   trip: Omit<Trip, "id" | "createdAt">,
   message: GmailImportMessage,
-  detectedPaymentRaw?: string | null
+  detectedPaymentRaw?: string | null,
+  sharedReservationCode?: string | null
 ): Omit<Trip, "id" | "createdAt"> {
   const addMetadata = (flight: Flight | null): Flight | null => {
     if (!flight) return null;
@@ -275,7 +276,7 @@ function withGmailMetadata(
     )
       ? normalizePaymentMethod(detectedPaymentRaw).label
       : normalizePaymentMethod(flight.paymentMethod).label;
-    const reservationCode = getFlightReservationCode(flight);
+    const reservationCode = getFlightReservationCode(flight) || sharedReservationCode || null;
 
     return {
       ...flight,
@@ -298,6 +299,82 @@ function withGmailMetadata(
     departureFlight: addMetadata(trip.departureFlight),
     returnFlight: addMetadata(trip.returnFlight),
   };
+}
+
+function normalizeAirlineForReservation(value?: string | null): string {
+  const text = (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (text.includes("jetsmart")) return "jetsmart";
+  if (text.includes("aerolineas")) return "aerolineas";
+  if (text.includes("flybondi")) return "flybondi";
+  return text.trim();
+}
+
+function extractReservationCodesFromText(text: string): string[] {
+  const patterns = [
+    /c[oó]digo[ \t]+de[ \t]+reserva[ \t]*:?[ \t]*([A-Z0-9]{4,10})/gi,
+    /(?:booking[ \t]+(?:code|reference)|pnr|record[ \t]+locator|localizador|n[°º]?[ \t]+de[ \t]+reserva|n[uú]mero[ \t]+de[ \t]+reserva)[ \t]*:?[ \t]*([A-Z0-9]{4,10})/gi,
+    /(?:^|\n)[ \t]*reserva[ \t]*:?[ \t]*([A-Z0-9]{4,10})/gi,
+  ];
+  const codes = new Set<string>();
+
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+      const code = normalizeReservationCode(match[1]);
+      if (code) codes.add(code);
+    }
+  }
+
+  return Array.from(codes);
+}
+
+function inferSharedReservationCode(
+  trips: Array<Omit<Trip, "id" | "createdAt">>,
+  message: GmailImportMessage
+): string | null {
+  const flights = trips.flatMap((trip) =>
+    [trip.departureFlight, trip.returnFlight].filter(Boolean) as Flight[]
+  );
+  const detectedReservationCodes = new Set<string>();
+
+  for (const code of extractReservationCodesFromText(message.text)) {
+    detectedReservationCodes.add(code);
+  }
+  for (const flight of flights) {
+    const code = getFlightReservationCode(flight);
+    if (code) detectedReservationCodes.add(code);
+  }
+
+  const airlineKeys = Array.from(
+    new Set(
+      flights
+        .map((flight) => normalizeAirlineForReservation(flight.airline))
+        .filter(Boolean)
+    )
+  );
+  const codes = Array.from(detectedReservationCodes);
+  const sharedReservationCode =
+    codes.length === 1 && airlineKeys.length <= 1 ? codes[0] : null;
+
+  console.log("[reservationDetection]", {
+    subject: message.subject,
+    gmailMessageId: message.id,
+    detectedReservationCodes: codes,
+    extractedFlights: flights.map((flight) => ({
+      flightNumber: flight.flightNumber,
+      airline: flight.airline,
+      reservationCode: getFlightReservationCode(flight),
+      date: flight.departureDateTime,
+      origin: flight.departureAirportCode,
+      destination: flight.arrivalAirportCode,
+    })),
+    sharedReservationCode,
+  });
+
+  return sharedReservationCode;
 }
 
 function normalizeIdentity(value?: string | null): string {
@@ -404,8 +481,14 @@ export async function importTripsFromGmail(
         discarded += 1;
       } else {
         parsed += 1;
+        const sharedReservationCode = inferSharedReservationCode(parsedTrips, message);
         const tripsWithMetadata = parsedTrips.map((trip) =>
-          withGmailMetadata(trip, message, jetSmartPayment.detectedPaymentRaw)
+          withGmailMetadata(
+            trip,
+            message,
+            jetSmartPayment.detectedPaymentRaw,
+            sharedReservationCode
+          )
         );
         for (const trip of tripsWithMetadata) {
           for (const flight of [trip.departureFlight, trip.returnFlight]) {
